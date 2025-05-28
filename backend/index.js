@@ -73,7 +73,3 @@ io.on('connection', socket => {
     io.to(gameId).emit('voteSubmitted', { alias });
   });
 });
-
-server.listen(PORT, () => {
-    console.log('Server running on port ${PORT}');
-  });
