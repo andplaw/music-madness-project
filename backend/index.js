@@ -1,0 +1,62 @@
+// This is a simplified MVP (Minimum Viable Product) for your playlist elimination game
+// Technologies used: React (frontend), Node.js + Express (backend), and Socket.IO (for real-time updates)
+
+// File: backend/index.js
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
+app.use(cors());
+app.use(express.json());
+
+const games = {}; // Store games by gameId
+
+io.on('connection', socket => {
+  socket.on('createGame', ({ gameId, password }) => {
+    if (!games[gameId]) {
+      games[gameId] = { players: [], playlists: [], password, state: 'waiting' };
+      socket.join(gameId);
+      io.to(gameId).emit('gameCreated', { gameId });
+    }
+  });
+
+  socket.on('joinGame', ({ gameId, alias, password }) => {
+    const game = games[gameId];
+    if (game && game.password === password && !game.players.some(p => p.alias === alias)) {
+      game.players.push({ alias, socketId: socket.id });
+      socket.join(gameId);
+      io.to(gameId).emit('playerJoined', { alias });
+    }
+  });
+
+  socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
+    const game = games[gameId];
+    if (game) {
+      game.playlists.push({ alias, songs: playlist, eliminations: [] });
+      io.to(gameId).emit('playlistSubmitted', { alias });
+    }
+  });
+
+  socket.on('eliminateSong', ({ gameId, alias, playlistIndex, songIndex, commentary }) => {
+    const game = games[gameId];
+    if (game && game.playlists[playlistIndex]) {
+      game.playlists[playlistIndex].eliminations.push({ songIndex, alias, commentary });
+      game.playlists[playlistIndex].songs.splice(songIndex, 1);
+      io.to(gameId).emit('songEliminated', { playlistIndex });
+    }
+  });
+
+  socket.on('finalVote', ({ gameId, alias, topTwo }) => {
+    const game = games[gameId];
+    if (!game.votes) game.votes = [];
+    game.votes.push({ alias, topTwo });
+    io.to(gameId).emit('voteSubmitted', { alias });
+  });
+});
+
+server.listen(4000, () => console.log('Server running on port 4000'));
