@@ -6,13 +6,27 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const PORT = process.env.PORT || 4000; //
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
-
 app.use(cors());
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: '*', // Or your actual frontend domain
+    methods: ['GET', 'POST']
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+});
+
+const PORT = process.env.PORT || 4000;
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
 app.use(express.json());
 
 const games = {}; // Store games by gameId
