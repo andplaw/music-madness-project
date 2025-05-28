@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
-const socket = io('https://music-madness-project-backend.onrender.com');
+const socket = io('https://music-madness-project-backend.onrender.com', {
+  transports: ['websocket'],
+});
 
 export default function App() {
   const [gameId, setGameId] = useState('');
