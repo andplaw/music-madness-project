@@ -34,18 +34,33 @@ const games = {}; // Store games by gameId
 io.on('connection', socket => {
   socket.on('createGame', ({ gameId, password }) => {
     if (!games[gameId]) {
-      games[gameId] = { players: [], playlists: [], password, state: 'waiting' };
+      games[gameId] = { 
+        players: [], 
+        playlists: [], 
+        password, 
+        state: 'waiting',
+        gamePhase: 'lobby' 
+      };
       socket.join(gameId);
-      io.to(gameId).emit('gameCreated', { gameId });
+      io.to(gameId).emit('gameCreated', { 
+        gameId,
+        players: [],
+        gamephase: 'lobby' 
+      });
     }
   });
 
   socket.on('joinGame', ({ gameId, alias, password }) => {
     const game = games[gameId];
     if (game && game.password === password && !game.players.some(p => p.alias === alias)) {
-      game.players.push({ alias, socketId: socket.id });
+      const player = { alias, socketId: socket.id };
+      game.players.push(player);
       socket.join(gameId);
-      io.to(gameId).emit('playerJoined', { alias });
+
+      io.to(gameId).emit('playerJoined', { 
+        players: game.players.map(p => p.alias),
+        gamePhase: game.gamePhase 
+      });
     }
   });
 
