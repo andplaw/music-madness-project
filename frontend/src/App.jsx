@@ -21,7 +21,7 @@ export default function App() {
       setJoined(true);
       setPlayers(players);
       setGamePhase(gamePhase);
-      setCurrentGameId(gameId);
+      setGameId(gameId);
     });
 
     socket.on('playerJoined', ({ players, gamePhase }) => {
