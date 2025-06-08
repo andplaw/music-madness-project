@@ -26,10 +26,10 @@ export default function App() {
       setView('lobby'); // go to lobby after game is created
     });
 
-    socket.on('playerJoined', ({ players, gamePhase }) => {
+    socket.on('playerJoined', ({ gamePhase, alias }) => {
       console.log('Player joined:', alias);
       setJoined(true);
-      setPlayers(players)
+      setPlayers(prev => [...prev, alias])
       setGamePhase(gamePhase); 
       setView('lobby'); // go to lobby after joining
     });
@@ -48,7 +48,8 @@ export default function App() {
 
   const handleCreateGame = () => {
     if (!gameId || !password) return;
-    socket.emit('createGame', { gameId, password });
+    socket.emit('createGame', { gameId, password, alias });
+    console.log('Creating game with:', gameId, password, alias);
   };
 
   const handleJoinGame = () => {

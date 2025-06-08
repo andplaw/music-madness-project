@@ -32,21 +32,25 @@ app.use(express.json());
 const games = {}; // Store games by gameId
 
 io.on('connection', socket => {
-  socket.on('createGame', ({ gameId, password }) => {
+  socket.on('createGame', ({ gameId, password, alias }) => {
     if (!games[gameId]) {
+      const player = { alias, socketId: socket.id };
       games[gameId] = { 
-        players: [], 
+        players: [player], 
         playlists: [], 
         password, 
-        state: 'waiting',
-        gamePhase: 'lobby' 
+        state: 'waiting'
       };
       socket.join(gameId);
+      console.log('Game ${gameId} created by ${alias}');
+
       io.to(gameId).emit('gameCreated', { 
         gameId,
-        players: [],
-        gamephase: 'lobby' 
+        players: games[gameId].players.map((p) => p.alias),
+        gamePhase: games[gameId].state 
       });
+    } else {
+      socket.emit('error', {message: 'Game ID already exists.'});
     }
   });
 
