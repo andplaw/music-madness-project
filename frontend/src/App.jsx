@@ -13,15 +13,17 @@ export default function App() {
   const [joined, setJoined] = useState(false);
   const [players, setPlayers] = useState([]);
   const [gamePhase, setGamePhase] = useState('lobby'); // 'joining', 'submitting', 'waiting'
+  const [view, setView] = useState('home'); //can be 'home', 'lobby', 'submit'
 
   // Listen for backend events
   useEffect(() => {
-    socket.on('gameCreated', ({ gameId, players, setGamePhase }) => {
+    socket.on('gameCreated', ({ gameId, players, gamePhase }) => {
       console.log('Game created:', gameId);
       setJoined(true);
       setPlayers(players);
       setGamePhase(gamePhase);
       setGameId(gameId);
+      setView('lobby'); // go to lobby after game is created
     });
 
     socket.on('playerJoined', ({ players, gamePhase }) => {
@@ -29,6 +31,7 @@ export default function App() {
       setJoined(true);
       setPlayers(players)
       setGamePhase(gamePhase); 
+      setView('lobby'); // go to lobby after joining
     });
 
     socket.on('playlistSubmitted', ({ alias }) => {
@@ -65,8 +68,7 @@ export default function App() {
     <div className="p-4 max-w-xl mx-auto space-y-4">
       <h1 className="text-2xl font-bold">Playlist Elimination Game</h1>
 
-      {/* Phase: Join/Create a Game */}
-      {gamePhase === 'joining' && (
+      {view === 'home' && (
         <>
           <input value={gameId} onChange={e => setGameId(e.target.value)} placeholder="Game ID" className="input" />
           <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="input" type="password" />
@@ -76,8 +78,17 @@ export default function App() {
         </>
       )}
 
-      {/* Phase: Submit Playlist */}
-      {gamePhase === 'submitting' && (
+      {view === 'lobby' && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Waiting in Lobby (Game ID: {gameId})</h2>
+          <ul className="list-disc list-inside">
+            {players.map((p, idx) => <li key={idx}>{p}</li>)}
+          </ul>
+          {/* Optional: Add a Start Game button for the host here */}
+        </div>
+      )}
+
+      {view === 'submit' && (
         <div>
           <h2 className="font-semibold">Your Playlist</h2>
           {playlist.map((song, idx) => (
@@ -94,24 +105,6 @@ export default function App() {
             />
           ))}
           <button onClick={handleSubmitPlaylist} className="btn">Submit Playlist</button>
-        </div>
-      )}
-
-      {/* Phase: Waiting */}
-      {gamePhase === 'waiting' && (
-        <div>
-          <h2 className="text-lg">Waiting for other players to submit their playlists...</h2>
-        </div>
-      )}
-
-      {gamePhase === 'lobby' && (
-        <div className="mt-4 p-2 border rounded bg-gray-100">
-          <h2 className="text-lg font-semibold">Players in Lobby:</h2>
-          <ul className="list-disc list-inside">
-            {players.map((p, idx) => (
-              <li key={idx}>{p}</li>
-            ))}
-          </ul>
         </div>
       )}
     </div>
