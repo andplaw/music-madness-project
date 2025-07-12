@@ -39,7 +39,7 @@ io.on('connection', socket => {
         playerList: [player], 
         playlists: [], 
         password, 
-        state: 'waiting'
+        state: 'lobby'
       };
       socket.join(gameId);
       console.log('Game ${gameId} created by ${alias}');
