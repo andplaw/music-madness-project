@@ -71,6 +71,18 @@ io.on('connection', socket => {
     }
   });
 
+  socket.on('startGame', ({ gameId }) => {
+    const game = games[gameId];
+    if (game && game.gamePhase === 'lobby') {
+      game.gamePhase = 'submission';
+      console.log(`Game ${gameId} started. Now accepting playlists.`);
+
+      io.to(gameId).emit('gamePhaseChanged', {
+        gamePhase: 'submission'
+      });
+    }
+  });
+
   socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
     const game = games[gameId];
     if (game) {

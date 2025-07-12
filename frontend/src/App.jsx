@@ -34,6 +34,15 @@ export default function App() {
       setView('lobby'); // go to lobby after joining
     });
 
+    socket.on('gamePhaseChanged', ({ gamePhase }) => {
+      setGamePhase(gamePhase);
+
+      // Optionally update the view
+      if (gamePhase === 'submission') {
+        setView('submit');
+      }
+    });
+
     socket.on('playlistSubmitted', ({ alias }) => {
       console.log(`Playlist submitted by ${alias}`);
       setGamePhase('waiting');
@@ -42,6 +51,7 @@ export default function App() {
     return () => {
       socket.off('gameCreated');
       socket.off('playerJoined');
+      socket.off('gamePhaseChanged')
       socket.off('playlistSubmitted');
     };
   }, []);
@@ -85,7 +95,14 @@ export default function App() {
           <ul className="list-disc list-inside">
             {playerList.map((player, idx) => <li key={idx}>{player || <em>(unnamed)</em>}</li>)}
           </ul>
-          {/* Optional: Add a Start Game button for the host here */}
+          {alias === playerList[0] && (
+            <button
+              className="btn mt-2"
+              onClick={() => socket.emit('startGame', { gameId })}
+            >
+              Start Game
+            </button>
+          )}
         </div>
       )}
 
