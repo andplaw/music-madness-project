@@ -80,6 +80,8 @@ io.on('connection', socket => {
       io.to(gameId).emit('gamePhaseChanged', {
         gamePhase: 'submission'
       });
+    } else {
+      console.log(`Invalid start attempt for game: ${gameId}`);
     }
   });
 

@@ -35,6 +35,7 @@ export default function App() {
     });
 
     socket.on('gamePhaseChanged', ({ gamePhase }) => {
+      console.log('Game phase changed to:', gamePhase);
       setGamePhase(gamePhase);
 
       // Optionally update the view
@@ -98,7 +99,10 @@ export default function App() {
           {alias === playerList[0] && (
             <button
               className="btn mt-2"
-              onClick={() => socket.emit('startGame', { gameId })}
+              onClick={() => {
+                console.log('Start Game clicked');
+                socket.emit('startGame', { gameId });
+              }}
             >
               Start Game
             </button>
