@@ -36,7 +36,7 @@ io.on('connection', socket => {
     if (!games[gameId]) {
       const player = { alias, socketId: socket.id };
       games[gameId] = { 
-        players: [player], 
+        playerList: [player], 
         playlists: [], 
         password, 
         state: 'waiting'
@@ -46,7 +46,7 @@ io.on('connection', socket => {
 
       io.to(gameId).emit('gameCreated', { 
         gameId,
-        players: games[gameId].players.map((p) => p.alias),
+        playerList: games[gameId].playerList.map((p) => p.alias),
         gamePhase: games[gameId].state 
       });
     } else {
@@ -56,16 +56,16 @@ io.on('connection', socket => {
 
   socket.on('joinGame', ({ gameId, alias, password }) => {
     const game = games[gameId];
-    if (game && game.password === password && !game.players.some(p => p.alias === alias)) {
+    if (game && game.password === password && !game.playerList.some(p => p.alias === alias)) {
       const player = { alias, socketId: socket.id };
-      game.players.push(player);
+      game.playerList.push(player);
       socket.join(gameId);
 
       console.log(`Player joined game ${gameId}: ${alias}`);
 
       io.to(gameId).emit('playerJoined', { 
         alias,
-        players: game.players.map(p => p.alias),
+        playerList: game.playerList.map(p => p.alias),
         gamePhase: game.gamePhase 
       });
     }
