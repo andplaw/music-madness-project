@@ -11,25 +11,25 @@ export default function App() {
   const [alias, setAlias] = useState('');
   const [playlist, setPlaylist] = useState(['', '', '', '', '']);
   const [joined, setJoined] = useState(false);
-  const [players, setPlayerList] = useState([]);
+  const [playerList, setPlayerList] = useState([]);
   const [gamePhase, setGamePhase] = useState('lobby'); // 'joining', 'submitting', 'waiting'
   const [view, setView] = useState('home'); //can be 'home', 'lobby', 'submit'
 
   // Listen for backend events
   useEffect(() => {
-    socket.on('gameCreated', ({ gameId, players, gamePhase }) => {
+    socket.on('gameCreated', ({ gameId, playerList, gamePhase }) => {
       console.log('Game created:', gameId);
       setJoined(true);
-      setPlayerList(players);
+      setPlayerList(playerList);
       setGamePhase(gamePhase);
       setGameId(gameId);
       setView('lobby'); // go to lobby after game is created
     });
 
-    socket.on('playerJoined', ({ gamePhase, alias, players }) => {
+    socket.on('playerJoined', ({ gamePhase, alias, playerList }) => {
       console.log('Player joined:', alias);
       setJoined(true);
-      setPlayerList(players)
+      setPlayerList(playerList)
       setGamePhase(gamePhase); 
       setView('lobby'); // go to lobby after joining
     });
