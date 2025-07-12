@@ -61,7 +61,10 @@ io.on('connection', socket => {
       game.players.push(player);
       socket.join(gameId);
 
+      console.log(`Player joined game ${gameId}: ${alias}`);
+
       io.to(gameId).emit('playerJoined', { 
+        alias,
         players: game.players.map(p => p.alias),
         gamePhase: game.gamePhase 
       });
