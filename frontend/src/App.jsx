@@ -11,25 +11,25 @@ export default function App() {
   const [alias, setAlias] = useState('');
   const [playlist, setPlaylist] = useState(['', '', '', '', '']);
   const [joined, setJoined] = useState(false);
-  const [playerList, setPlayerList] = useState([]);
+  const [players, setPlayerList] = useState([]);
   const [gamePhase, setGamePhase] = useState('lobby'); // 'joining', 'submitting', 'waiting'
   const [view, setView] = useState('home'); //can be 'home', 'lobby', 'submit'
 
   // Listen for backend events
   useEffect(() => {
-    socket.on('gameCreated', ({ gameId, playerList, gamePhase }) => {
+    socket.on('gameCreated', ({ gameId, players, gamePhase }) => {
       console.log('Game created:', gameId);
       setJoined(true);
-      setPlayerList(playerList);
+      setPlayerList(players);
       setGamePhase(gamePhase);
       setGameId(gameId);
       setView('lobby'); // go to lobby after game is created
     });
 
-    socket.on('playerJoined', ({ gamePhase, alias, playerList }) => {
+    socket.on('playerJoined', ({ gamePhase, alias, players }) => {
       console.log('Player joined:', alias);
       setJoined(true);
-      setPlayerList(playerList)
+      setPlayerList(players)
       setGamePhase(gamePhase); 
       setView('lobby'); // go to lobby after joining
     });
@@ -94,9 +94,9 @@ export default function App() {
         <div className="space-y-4">
           <h2 className="text-lg font-semibold">Waiting in Lobby (Game ID: {gameId})</h2>
           <ul className="list-disc list-inside">
-            {playerList.map((player, idx) => <li key={idx}>{player || <em>(unnamed)</em>}</li>)}
+            {players.map((player, idx) => <li key={idx}>{player || <em>(unnamed)</em>}</li>)}
           </ul>
-          {alias === playerList[0] && (
+          {alias === players[0] && (
             <button
               className="btn mt-2"
               onClick={() => {

@@ -36,18 +36,18 @@ io.on('connection', socket => {
     if (!games[gameId]) {
       const player = { alias, socketId: socket.id };
       games[gameId] = { 
-        playerList: [player], 
+        players: [player], 
         playlists: [], 
         password, 
-        state: 'lobby'
+        gamePhase: 'lobby'
       };
       socket.join(gameId);
-      console.log('Game ${gameId} created by ${alias}');
+      console.log(`Game ${gameId} created by ${alias}`);
 
       io.to(gameId).emit('gameCreated', { 
         gameId,
-        playerList: games[gameId].playerList.map((p) => p.alias),
-        gamePhase: games[gameId].state 
+        players: games[gameId].players.map((p) => p.alias),
+        gamePhase: games[gameId].gamePhase 
       });
     } else {
       socket.emit('error', {message: 'Game ID already exists.'});
@@ -56,16 +56,16 @@ io.on('connection', socket => {
 
   socket.on('joinGame', ({ gameId, alias, password }) => {
     const game = games[gameId];
-    if (game && game.password === password && !game.playerList.some(p => p.alias === alias)) {
+    if (game && game.password === password && !game.players.some(p => p.alias === alias)) {
       const player = { alias, socketId: socket.id };
-      game.playerList.push(player);
+      game.players.push(player);
       socket.join(gameId);
 
       console.log(`Player joined game ${gameId}: ${alias}`);
 
       io.to(gameId).emit('playerJoined', { 
         alias,
-        playerList: game.playerList.map(p => p.alias),
+        players: game.players.map(p => p.alias),
         gamePhase: game.gamePhase 
       });
     }
