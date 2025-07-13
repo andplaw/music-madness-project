@@ -115,7 +115,8 @@ export default function App() {
         </div>
       )}
 
-      {!playlistSubmitted ? (
+      {view === 'submit' && 
+      !playlistSubmitted ? (
         <div>
           <h2 className="font-semibold">Your Playlist</h2>
           {playlist.map((song, idx) => (
