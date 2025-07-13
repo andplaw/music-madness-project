@@ -109,12 +109,15 @@ io.on('connection', socket => {
 
       // Move to elimination phase
       game.gamePhase = 'elimination_round_1';
+      assignPlaylists(game);
+      console.log('Assignments for round 1:', game.currentAssignments);
 
       io.to(gameId).emit('gamePhaseChanged', {
-        gamePhase: game.gamePhase
+        gamePhase: game.gamePhase,
+        assignments: game.currentAssignments,
       });
 
-      // Optional: start assigning playlists here
+      // Start assigning playlists here
     }
   });
 
@@ -134,3 +137,40 @@ io.on('connection', socket => {
     io.to(gameId).emit('voteSubmitted', { alias });
   });
 });
+
+function assignPlaylists(game) {
+  const assignments = {};
+  const unassignedPlaylists = [...game.playlists.keys()];
+  const aliases = game.players.map(p => p.alias);
+
+  // Initialize history if first round
+  if (!game.assignmentHistory) {
+    game.assignmentHistory = {};
+    for (const alias of aliases) {
+      game.assignmentHistory[alias] = [];
+    }
+  }
+
+  for (const alias of aliases) {
+    const history = game.assignmentHistory[alias];
+    const available = unassignedPlaylists.filter(idx => {
+      const pl = game.playlists[idx];
+      return pl.alias !== alias && !history.includes(idx);
+    });
+
+    if (available.length === 0) {
+      console.warn(`No valid playlist for ${alias}. Assigning randomly (fallback)`);
+      assignments[alias] = unassignedPlaylists.pop(); // fallback
+    } else {
+      const choice = available[Math.floor(Math.random() * available.length)];
+      assignments[alias] = choice;
+      unassignedPlaylists.splice(unassignedPlaylists.indexOf(choice), 1);
+    }
+
+    // Track assignment
+    game.assignmentHistory[alias].push(assignments[alias]);
+  }
+
+  game.currentAssignments = assignments;
+};
+

@@ -15,6 +15,7 @@ export default function App() {
   const [gamePhase, setGamePhase] = useState('lobby'); // 'joining', 'submitting', 'waiting'
   const [view, setView] = useState('home'); //can be 'home', 'lobby', 'submit'
   const [playlistSubmitted, setPlaylistSubmitted] = useState(false);
+  const [assignedPlaylistIndex, setAssignedPlaylistIndex] = useState(null);
 
 
   // Listen for backend events
@@ -36,7 +37,7 @@ export default function App() {
       setView('lobby'); // go to lobby after joining
     });
 
-    socket.on('gamePhaseChanged', ({ gamePhase }) => {
+    socket.on('gamePhaseChanged', ({ gamePhase, assignments }) => {
       console.log('Game phase changed to:', gamePhase);
       setGamePhase(gamePhase);
 
@@ -44,7 +45,10 @@ export default function App() {
       if (gamePhase === 'submission') {
         setView('submit');
       } else if (gamePhase.startsWith('elimination')) {
-        setView('eliminate'); // We'll build this view next
+        if (assignments && assignments[alias] !== undefined) {
+          setAssignedPlaylistIndex(assignments[alias]); // New state
+          setView('eliminate');
+        }
       }
     });
 
@@ -137,6 +141,22 @@ export default function App() {
       ) : (
         <p className="text-green-700">🎶 Playlist submitted! Waiting for others...</p>
       ))}
+
+      {view === 'eliminate' && assignedPlaylistIndex !== null && (
+        <div>
+          <h2 className="font-semibold">Eliminate a Song</h2>
+          <p>You've been assigned a playlist. Eliminate one song based on taste + theme:</p>
+
+          <ul className="mb-4">
+            {gamePlaylists[assignedPlaylistIndex].songs.map((song, idx) => (
+              <li key={idx}>{song}</li>
+            ))}
+          </ul>
+
+          {/* Add elimination controls next step */}
+        </div>
+      )}
+
     </div>
   );
 }
