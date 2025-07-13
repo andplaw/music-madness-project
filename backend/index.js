@@ -87,9 +87,34 @@ io.on('connection', socket => {
 
   socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
     const game = games[gameId];
-    if (game) {
-      game.playlists.push({ alias, songs: playlist, eliminations: [] });
-      io.to(gameId).emit('playlistSubmitted', { alias });
+    if (!game) return;
+
+    // Prevent duplicates
+    if (game.playlists.some(p => p.alias === alias)) return;
+
+    
+    game.playlists.push({ 
+      alias, 
+      songs: playlist, 
+      eliminations: [] 
+    });
+
+    console.log(`Playlist submitted by ${alias}`);
+
+    io.to(gameId).emit('playlistSubmitted', { alias });
+
+    // Check if all players have submitted
+    if (game.playlists.length === game.players.length) {
+      console.log(`All playlists submitted for game ${gameId}`);
+
+      // Move to elimination phase
+      game.gamePhase = 'elimination_round_1';
+
+      io.to(gameId).emit('gamePhaseChanged', {
+        gamePhase: game.gamePhase
+      });
+
+      // Optional: start assigning playlists here
     }
   });
 

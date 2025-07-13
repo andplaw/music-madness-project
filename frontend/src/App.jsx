@@ -14,6 +14,8 @@ export default function App() {
   const [players, setPlayerList] = useState([]);
   const [gamePhase, setGamePhase] = useState('lobby'); // 'joining', 'submitting', 'waiting'
   const [view, setView] = useState('home'); //can be 'home', 'lobby', 'submit'
+  const [playlistSubmitted, setPlaylistSubmitted] = useState(false);
+
 
   // Listen for backend events
   useEffect(() => {
@@ -41,6 +43,8 @@ export default function App() {
       // Optionally update the view
       if (gamePhase === 'submission') {
         setView('submit');
+      } else if (gamePhase.startsWith('elimination')) {
+        setView('eliminate'); // We'll build this view next
       }
     });
 
@@ -74,6 +78,7 @@ export default function App() {
       return;
     }
     socket.emit('submitPlaylist', { gameId, alias, playlist });
+    setPlaylistSubmitted(true);
   };
 
   return (
@@ -110,7 +115,7 @@ export default function App() {
         </div>
       )}
 
-      {view === 'submit' && (
+      {!playlistSubmitted ? (
         <div>
           <h2 className="font-semibold">Your Playlist</h2>
           {playlist.map((song, idx) => (
@@ -121,13 +126,17 @@ export default function App() {
                 const updated = [...playlist];
                 updated[idx] = e.target.value;
                 setPlaylist(updated);
+                
+
               }}
               placeholder={`Song ${idx + 1}`}
               className="input"
             />
           ))}
-          <button onClick={handleSubmitPlaylist} className="btn">Submit Playlist</button>
+          <button onClick={handleSubmitPlaylist} className="btn mt-2">Submit Playlist</button>
         </div>
+      ) : (
+        <p className="text-green-700">🎶 Playlist submitted! Waiting for others...</p>
       )}
     </div>
   );
