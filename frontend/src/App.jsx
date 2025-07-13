@@ -116,7 +116,7 @@ export default function App() {
       )}
 
       {view === 'submit' && 
-      !playlistSubmitted ? (
+      (!playlistSubmitted ? (
         <div>
           <h2 className="font-semibold">Your Playlist</h2>
           {playlist.map((song, idx) => (
@@ -127,8 +127,6 @@ export default function App() {
                 const updated = [...playlist];
                 updated[idx] = e.target.value;
                 setPlaylist(updated);
-                
-
               }}
               placeholder={`Song ${idx + 1}`}
               className="input"
@@ -138,7 +136,7 @@ export default function App() {
         </div>
       ) : (
         <p className="text-green-700">🎶 Playlist submitted! Waiting for others...</p>
-      )}
+      ))}
     </div>
   );
 }
