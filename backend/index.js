@@ -115,6 +115,7 @@ io.on('connection', socket => {
       io.to(gameId).emit('gamePhaseChanged', {
         gamePhase: game.gamePhase,
         assignments: game.currentAssignments,
+        playlists: game.playlists, // ✅ include playlists
       });
 
       // Start assigning playlists here

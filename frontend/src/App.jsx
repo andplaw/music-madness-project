@@ -16,6 +16,7 @@ export default function App() {
   const [view, setView] = useState('home'); //can be 'home', 'lobby', 'submit'
   const [playlistSubmitted, setPlaylistSubmitted] = useState(false);
   const [assignedPlaylistIndex, setAssignedPlaylistIndex] = useState(null);
+  const [playlists, setPlaylists] = useState([]);
 
 
   // Listen for backend events
@@ -37,9 +38,13 @@ export default function App() {
       setView('lobby'); // go to lobby after joining
     });
 
-    socket.on('gamePhaseChanged', ({ gamePhase, assignments }) => {
+    socket.on('gamePhaseChanged', ({ gamePhase, assignments, playlists }) => {
       console.log('Game phase changed to:', gamePhase);
       setGamePhase(gamePhase);
+
+      if (playlists) {
+        setPlaylists(playlists); // ✅ update state
+      }
 
       // Optionally update the view
       if (gamePhase === 'submission') {
@@ -148,7 +153,7 @@ export default function App() {
           <p>You've been assigned a playlist. Eliminate one song based on taste + theme:</p>
 
           <ul className="mb-4">
-            {gamePlaylists[assignedPlaylistIndex].songs.map((song, idx) => (
+            {playlists[assignedPlaylistIndex].songs.map((song, idx) => (
               <li key={idx}>{song}</li>
             ))}
           </ul>
