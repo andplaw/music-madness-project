@@ -87,12 +87,13 @@ io.on('connection', socket => {
 
   socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
     const game = games[gameId];
-    if (!game) return;
+    if (!game || game.gamePhase !== 'playlist') return;
 
     // Prevent duplicates
     if (game.playlists.some(p => p.alias === alias)) return;
 
-    
+    // Store the playlist
+    game.playlists = game.playlists || [];
     game.playlists.push({ 
       alias, 
       songs: playlist, 
@@ -107,14 +108,17 @@ io.on('connection', socket => {
     if (game.playlists.length === game.players.length) {
       console.log(`All playlists submitted for game ${gameId}`);
 
+      // Assign playlists to each player for elimination
+      game.eliminations = [];
+      game.assignedPlaylists = assignPlaylistsToPlayers(game);
+      console.log('Assignments for round 1:', game.assignedPlaylists);
+
       // Move to elimination phase
       game.gamePhase = 'elimination_round_1';
-      assignPlaylists(game);
-      console.log('Assignments for round 1:', game.currentAssignments);
 
       io.to(gameId).emit('gamePhaseChanged', {
         gamePhase: game.gamePhase,
-        assignments: game.currentAssignments,
+        assignedPlaylists: game.assignedPlaylists,
         playlists: game.playlists, // ✅ include playlists
       });
 
@@ -172,8 +176,8 @@ function gamePhaseIsElimination(game) {
 }
 
 
-function assignPlaylists(game) {
-  const assignments = {};
+function assignPlaylistsToPlayers(game) {
+  const assignedPlaylists = {};
   const unassignedPlaylists = [...game.playlists.keys()];
   const aliases = game.players.map(p => p.alias);
 
@@ -194,17 +198,17 @@ function assignPlaylists(game) {
 
     if (available.length === 0) {
       console.warn(`No valid playlist for ${alias}. Assigning randomly (fallback)`);
-      assignments[alias] = unassignedPlaylists.pop(); // fallback
+      assignedPlaylists[alias] = unassignedPlaylists.pop(); // fallback
     } else {
       const choice = available[Math.floor(Math.random() * available.length)];
-      assignments[alias] = choice;
+      assignedPlaylists[alias] = choice;
       unassignedPlaylists.splice(unassignedPlaylists.indexOf(choice), 1);
     }
 
     // Track assignment
-    game.assignmentHistory[alias].push(assignments[alias]);
+    game.assignmentHistory[alias].push(assignedPlaylists[alias]);
   }
 
-  game.currentAssignments = assignments;
+  game.assignedPlaylists = assignedPlaylists;
 };
 

@@ -39,7 +39,7 @@ export default function App() {
       setView('lobby'); // go to lobby after joining
     });
 
-    socket.on('gamePhaseChanged', ({ gamePhase, assignments, playlists }) => {
+    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists }) => {
       console.log('Game phase changed to:', gamePhase);
       setGamePhase(gamePhase);
 
@@ -47,15 +47,21 @@ export default function App() {
         setPlaylists(playlists); // ✅ update state
       }
 
-      // Optionally update the view
+      // Update the view
       if (gamePhase === 'submission') {
         setView('submit');
       } else if (gamePhase.startsWith('elimination')) {
-        if (assignments && assignments[alias] !== undefined) {
-          setAssignedPlaylistIndex(assignments[alias]); // New state
+        if (assignedPlaylists && assignedPlaylists[alias] !== undefined) {
+          setAssignedPlaylistIndex(assignedPlaylists[alias]); // New state
+          setView('eliminate');
+        } else {
+          const myIndex = players.findIndex(p => p.alias === alias);
+          setAssignedPlaylistIndex(assignedPlaylists[myIndex]);
           setView('eliminate');
         }
       }
+
+      // Handle other phases similarly...
     });
 
     socket.on('playlistSubmitted', ({ alias }) => {
