@@ -113,6 +113,12 @@ io.on('connection', socket => {
 
     io.to(gameId).emit('playlistSubmitted', { alias });
 
+    console.log('Debug: playlist count =', game.playlists.length);
+    console.log('Debug: player count   =', game.players.length);
+    console.log('Playlists so far:', game.playlists.map(p => p.alias));
+    console.log('Players in game:', game.players.map(p => p.alias));
+
+
     // Check if all players have submitted
     if (game.playlists.length === game.players.length) {
       console.log(`All playlists submitted for game ${gameId}`);
