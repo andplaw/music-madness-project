@@ -51,6 +51,9 @@ export default function App() {
       if (gamePhase === 'submission') {
         setView('submit');
       } else if (gamePhase.startsWith('elimination')) {
+        console.log('Alias:', alias);
+        console.log('Assigned playlists:', assignedPlaylists);
+
         if (assignedPlaylists && assignedPlaylists[alias] !== undefined) {
           setAssignedPlaylistIndex(assignedPlaylists[alias]); // New state
           setView('eliminate');
@@ -106,6 +109,7 @@ export default function App() {
           <input value={alias} onChange={e => setAlias(e.target.value)} placeholder="Your Alias" className="input" />
           <button onClick={handleCreateGame} className="btn">Create Game</button>
           <button onClick={handleJoinGame} className="btn">Join Game</button>
+          <p>Phase: {gamePhase} | View: {view}</p>
         </>
       )}
 
@@ -126,6 +130,7 @@ export default function App() {
               Start Game
             </button>
           )}
+          <p>Phase: {gamePhase} | View: {view}</p>
         </div>
       )}
 
@@ -133,6 +138,7 @@ export default function App() {
       (!playlistSubmitted ? (
         <div>
           <h2 className="font-semibold">Your Playlist</h2>
+          <p>Phase: {gamePhase} | View: {view}</p>
           {playlist.map((song, idx) => (
             <input
               key={idx}
@@ -155,6 +161,7 @@ export default function App() {
       {view === 'eliminate' && assignedPlaylistIndex !== null && (
         <div>
           <h2 className="font-semibold">Eliminate a Song</h2>
+          <p>Phase: {gamePhase} | View: {view}</p>
           <p>You've been assigned a playlist. Choose one song to eliminate obased on taste + theme and add a comment:</p>
 
           <ul>
