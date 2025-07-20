@@ -90,6 +90,7 @@ export default function App() {
       return;
     }
     console.log('Playlist submitted with:', gameId, alias, playlist);
+    console.log('Socket connected:', socket?.connected);
     socket.emit('submitPlaylist', { gameId, alias, playlist });
     setPlaylistSubmitted(true);
   };
