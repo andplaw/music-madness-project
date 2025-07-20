@@ -87,10 +87,17 @@ io.on('connection', socket => {
 
   socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
     const game = games[gameId];
-    if (!game || game.gamePhase !== 'playlist') return;
+    if (!game || game.gamePhase !== 'playlist') {
+      console.log(`Invalid playlist submission: game=${gameId}, alias=${alias}`);
+      return;
+    }
 
     // Prevent duplicates
-    if (game.playlists.some(p => p.alias === alias)) return;
+    const alreadySubmitted = game.playlists?.some(p => p.alias === alias);
+    if (alreadySubmitted) {
+      console.log(`Duplicate playlist from ${alias} ignored.`);
+      return;
+    }
 
     // Store the playlist
     game.playlists = game.playlists || [];
@@ -100,7 +107,9 @@ io.on('connection', socket => {
       eliminations: [] 
     });
 
-    console.log(`Playlist submitted by ${alias}`);
+    console.log(`${alias} submitted playlist:`, songs);
+    console.log(`Total submitted: ${game.playlists.length}/${game.players.length}`);
+
 
     io.to(gameId).emit('playlistSubmitted', { alias });
 

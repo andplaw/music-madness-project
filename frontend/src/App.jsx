@@ -54,10 +54,6 @@ export default function App() {
         if (assignedPlaylists && assignedPlaylists[alias] !== undefined) {
           setAssignedPlaylistIndex(assignedPlaylists[alias]); // New state
           setView('eliminate');
-        } else {
-          const myIndex = players.findIndex(p => p.alias === alias);
-          setAssignedPlaylistIndex(assignedPlaylists[myIndex]);
-          setView('eliminate');
         }
       }
 
@@ -75,7 +71,7 @@ export default function App() {
       socket.off('gamePhaseChanged')
       socket.off('playlistSubmitted');
     };
-  }, []);
+  }, [socket, players, alias]);
 
   const handleCreateGame = () => {
     if (!gameId || !password) return;
