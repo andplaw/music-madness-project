@@ -227,5 +227,7 @@ function assignPlaylistsToPlayers(game) {
   }
 
   game.assignedPlaylists = assignedPlaylists;
+
+  return assignedPlaylists
 };
 
