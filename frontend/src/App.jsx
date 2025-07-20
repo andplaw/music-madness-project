@@ -89,6 +89,7 @@ export default function App() {
       alert('All 5 songs must be filled in!');
       return;
     }
+    console.log('Playlist submitted with:', gameId, alias, playlist);
     socket.emit('submitPlaylist', { gameId, alias, playlist });
     setPlaylistSubmitted(true);
   };

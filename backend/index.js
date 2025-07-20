@@ -86,6 +86,7 @@ io.on('connection', socket => {
   });
 
   socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
+    console.log('submitPlaylist triggered:', alias);
     const game = games[gameId];
     if (!game || game.gamePhase !== 'playlist') {
       console.log(`Invalid playlist submission: game=${gameId}, alias=${alias}`);
