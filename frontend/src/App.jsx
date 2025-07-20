@@ -17,7 +17,8 @@ export default function App() {
   const [playlistSubmitted, setPlaylistSubmitted] = useState(false);
   const [assignedPlaylistIndex, setAssignedPlaylistIndex] = useState(null);
   const [playlists, setPlaylists] = useState([]);
-
+  const [eliminatedSongIndex, setEliminatedSongIndex] = useState(null);
+  const [commentary, setCommentary] = useState('');
 
   // Listen for backend events
   useEffect(() => {
@@ -150,15 +151,47 @@ export default function App() {
       {view === 'eliminate' && assignedPlaylistIndex !== null && (
         <div>
           <h2 className="font-semibold">Eliminate a Song</h2>
-          <p>You've been assigned a playlist. Eliminate one song based on taste + theme:</p>
+          <p>You've been assigned a playlist. Choose one song to eliminate obased on taste + theme and add a comment:</p>
 
-          <ul className="mb-4">
-            {playlists[assignedPlaylistIndex].songs.map((song, idx) => (
-              <li key={idx}>{song}</li>
+          <ul>
+            {playlists[assignedPlaylistIndex]?.songs.map((song, index) => (
+              <li key={index}>
+                <label>
+                  <input
+                    type="radio"
+                    name="eliminatedSong"
+                    value={index}
+                    checked={eliminatedSongIndex === index}
+                    onChange={() => setEliminatedSongIndex(index)}
+                  />
+                  {song}
+                </label>
+              </li>
             ))}
           </ul>
 
-          {/* Add elimination controls next step */}
+          <textarea
+            placeholder="Add your commentary..."
+            value={commentary}
+            onChange={(e) => setCommentary(e.target.value)}
+          />
+
+          <button
+            disabled={eliminatedSongIndex === null || commentary.trim() === ''}
+            onClick={() => {
+              socket.emit('submitElimination', {
+                gameId,
+                alias,
+                playlistIndex: assignedPlaylistIndex,
+                eliminatedSongIndex,
+                commentary,
+              });
+
+              setView('waiting'); // show waiting message until all players are done
+            }}
+          >
+            Submit
+          </button>
         </div>
       )}
 

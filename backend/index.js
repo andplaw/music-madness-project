@@ -131,6 +131,34 @@ io.on('connection', socket => {
     }
   });
 
+  socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIndex, commentary }) => {
+    const game = games[gameId];
+    if (!game || !gamePhaseIsElimination(game)) return;
+
+    game.eliminations = game.eliminations || [];
+    game.eliminations.push({
+      alias,
+      playlistIndex,
+      eliminatedSongIndex,
+      commentary,
+    });
+
+    // Optional: Log for debugging
+    console.log(`Elimination from ${alias}:`, game.eliminations);
+
+    // Check if all players have submitted
+    if (game.eliminations.length === game.players.length) {
+      // Proceed to voting phase
+      game.gamePhase = 'voting';
+
+      io.to(gameId).emit('gamePhaseChanged', {
+        gamePhase: game.gamePhase,
+        eliminations: game.eliminations,
+      });
+    }
+  });
+
+
   socket.on('finalVote', ({ gameId, alias, topTwo }) => {
     const game = games[gameId];
     if (!game.votes) game.votes = [];
@@ -138,6 +166,11 @@ io.on('connection', socket => {
     io.to(gameId).emit('voteSubmitted', { alias });
   });
 });
+
+function gamePhaseIsElimination(game) {
+  return game.gamePhase && game.gamePhase.startsWith('elimination');
+}
+
 
 function assignPlaylists(game) {
   const assignments = {};
