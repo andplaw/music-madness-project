@@ -107,7 +107,7 @@ io.on('connection', socket => {
       eliminations: [] 
     });
 
-    console.log(`${alias} submitted playlist:`, songs);
+    console.log(`${alias} submitted playlist:`, playlist);
     console.log(`Total submitted: ${game.playlists.length}/${game.players.length}`);
 
 
@@ -124,6 +124,7 @@ io.on('connection', socket => {
 
       // Move to elimination phase
       game.gamePhase = 'elimination_round_1';
+      console.log(`Game phase changed to: ${game.gamePhase}`);
 
       io.to(gameId).emit('gamePhaseChanged', {
         gamePhase: game.gamePhase,
