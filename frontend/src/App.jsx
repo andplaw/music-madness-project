@@ -69,10 +69,7 @@ export default function App() {
         </div>
       ))}
 
-      if (currentRound >= maxRounds) {
-        game.gamePhase = 'voting';
-        io.to(gameId).emit('gamePhaseChanged', { gamePhase: 'voting', playlists: game.playlists });
-      }
+      
 
       // Handle other phases similarly...
     });

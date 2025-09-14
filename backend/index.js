@@ -152,41 +152,90 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedIndex, comment }) => {
+  // =======================
+  // submitElimination handler
+  // =======================
+  socket.on("submitElimination", ({ gameId, alias, eliminatedSongId, comment }) => {
     const game = games[gameId];
-    if (!game || !game.assignedPlaylists || !game.playlists) return;
+    if (!game) return;
 
-    const assignedIndex = game.assignedPlaylists[alias];
-    const playlist = game.playlists[assignedIndex];
+    const playlistIdx = game.assignedPlaylists[alias];
+    const playlist = game.playlists[playlistIdx];
+    if (!playlist) return;
 
-    playlist.eliminations.push({
-      eliminatedIndex,
-      comment,
-      by: alias
-    });
+    // 1. Remove the eliminated song
+    playlist.songs = playlist.songs.filter(s => s.id !== eliminatedSongId);
 
-    game.eliminationSubmissions = game.eliminationSubmissions || new Set();
-    game.eliminationSubmissions.add(alias);
+    // 2. Attach comment to playlist
+    if (!playlist.comments) playlist.comments = [];
+    playlist.comments.push({ alias, eliminatedSongId, comment });
 
-    console.log(`${alias} eliminated song ${eliminatedIndex} from playlist ${assignedIndex}`);
+    // 3. Track that this player submitted
+    if (!game.submissionsThisRound) game.submissionsThisRound = {};
+    game.submissionsThisRound[alias] = true;
 
-    // Once all players have submitted
-    if (game.eliminationSubmissions.size === game.players.length) {
-      // Rotate
-      game.eliminationSubmissions.clear();
-      rotateAssignments(game);
+    // 4. Notify all clients of updated playlists + comments
+    io.to(gameId).emit("playlistsUpdated", game.playlists);
 
-      // Advance round
-      const currentRound = parseInt(game.gamePhase.split('_').pop());
-      game.gamePhase = `elimination_round_${currentRound + 1}`;
+    // 5. Check if all players have submitted
+    const allSubmitted = game.players.every(p => game.submissionsThisRound[p.alias]);
+    if (allSubmitted) {
+      game.currentRound = (game.currentRound || 1);
 
-      io.to(gameId).emit('gamePhaseChanged', {
-        gamePhase: game.gamePhase,
-        assignedPlaylists: game.assignedPlaylists,
-        playlists: game.playlists,
-      });
+      if (game.currentRound < game.maxRounds) {
+        // Advance to next round
+        rotateAssignments(game);
+        game.currentRound++;
+        game.submissionsThisRound = {}; // reset for next round
+        game.phase = `elimination_round_${game.currentRound}`;
+        io.to(gameId).emit("phaseChange", { phase: game.phase, round: game.currentRound });
+      } else {
+        // End game
+        game.phase = "voting";
+        io.to(gameId).emit("phaseChange", { phase: "voting" });
+      }
     }
   });
+
+
+  // =======================
+  // rotateAssignments helper
+  // =======================
+  function rotateAssignments(game) {
+    const assignedPlaylists = {};
+    const unassignedPlaylists = [...game.playlists.keys()];
+    const aliases = game.players.map(p => p.alias);
+
+    for (const alias of aliases) {
+      const history = game.assignmentHistory[alias] || [];
+      const available = unassignedPlaylists.filter(idx => {
+        const pl = game.playlists[idx];
+        return pl.alias !== alias && !history.includes(idx);
+      });
+
+      let choice;
+      if (available.length === 0) {
+        // Fallback: allow repeats
+        console.warn(`No valid playlist for ${alias} in round ${game.currentRound}. Using fallback.`);
+        choice = unassignedPlaylists[Math.floor(Math.random() * unassignedPlaylists.length)];
+      } else {
+        choice = available[Math.floor(Math.random() * available.length)];
+      }
+
+      assignedPlaylists[alias] = choice;
+      unassignedPlaylists.splice(unassignedPlaylists.indexOf(choice), 1);
+
+      // Update history
+      if (!game.assignmentHistory[alias]) game.assignmentHistory[alias] = [];
+      game.assignmentHistory[alias].push(choice);
+    }
+
+    game.assignedPlaylists = assignedPlaylists;
+
+    // Broadcast new assignments
+    io.to(game.gameId).emit("assignmentsUpdated", assignedPlaylists);
+  }
+
 
 
 
@@ -240,18 +289,4 @@ function assignPlaylistsToPlayers(game) {
 
   return assignedPlaylists
 };
-
-function rotateAssignments(game) {
-  const total = game.playlists.length;
-  const newAssignments = {};
-
-  for (const alias of Object.keys(game.assignedPlaylists)) {
-    const prev = game.assignedPlaylists[alias];
-    newAssignments[alias] = (prev + 1) % total;
-    game.assignmentHistory[alias].push(newAssignments[alias]);
-  }
-
-  game.assignedPlaylists = newAssignments;
-}
-
 
