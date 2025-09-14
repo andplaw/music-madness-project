@@ -152,32 +152,42 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIndex, commentary }) => {
+  socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedIndex, comment }) => {
     const game = games[gameId];
-    if (!game || !gamePhaseIsElimination(game)) return;
+    if (!game || !game.assignedPlaylists || !game.playlists) return;
 
-    game.eliminations = game.eliminations || [];
-    game.eliminations.push({
-      alias,
-      playlistIndex,
-      eliminatedSongIndex,
-      commentary,
+    const assignedIndex = game.assignedPlaylists[alias];
+    const playlist = game.playlists[assignedIndex];
+
+    playlist.eliminations.push({
+      eliminatedIndex,
+      comment,
+      by: alias
     });
 
-    // Optional: Log for debugging
-    console.log(`Elimination from ${alias}:`, game.eliminations);
+    game.eliminationSubmissions = game.eliminationSubmissions || new Set();
+    game.eliminationSubmissions.add(alias);
 
-    // Check if all players have submitted
-    if (game.eliminations.length === game.players.length) {
-      // Proceed to voting phase
-      game.gamePhase = 'voting';
+    console.log(`${alias} eliminated song ${eliminatedIndex} from playlist ${assignedIndex}`);
+
+    // Once all players have submitted
+    if (game.eliminationSubmissions.size === game.players.length) {
+      // Rotate
+      game.eliminationSubmissions.clear();
+      rotateAssignments(game);
+
+      // Advance round
+      const currentRound = parseInt(game.gamePhase.split('_').pop());
+      game.gamePhase = `elimination_round_${currentRound + 1}`;
 
       io.to(gameId).emit('gamePhaseChanged', {
         gamePhase: game.gamePhase,
-        eliminations: game.eliminations,
+        assignedPlaylists: game.assignedPlaylists,
+        playlists: game.playlists,
       });
     }
   });
+
 
 
   socket.on('finalVote', ({ gameId, alias, topTwo }) => {
@@ -230,4 +240,18 @@ function assignPlaylistsToPlayers(game) {
 
   return assignedPlaylists
 };
+
+function rotateAssignments(game) {
+  const total = game.playlists.length;
+  const newAssignments = {};
+
+  for (const alias of Object.keys(game.assignedPlaylists)) {
+    const prev = game.assignedPlaylists[alias];
+    newAssignments[alias] = (prev + 1) % total;
+    game.assignmentHistory[alias].push(newAssignments[alias]);
+  }
+
+  game.assignedPlaylists = newAssignments;
+}
+
 

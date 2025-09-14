@@ -60,6 +60,20 @@ export default function App() {
         }
       }
 
+      {assignedPlaylists && assignedPlaylists.songs.map((song, idx) => (
+        <div key={idx} className="song-entry">
+          <p>{song}</p>
+          {assignedPlaylists.eliminations?.find(e => e.eliminatedIndex === idx) && (
+            <p className="comment"> {assignedPlaylists.eliminations.find(e => e.eliminatedIndex === idx).comment}</p>
+          )}
+        </div>
+      ))}
+
+      if (currentRound >= maxRounds) {
+        game.gamePhase = 'voting';
+        io.to(gameId).emit('gamePhaseChanged', { gamePhase: 'voting', playlists: game.playlists });
+      }
+
       // Handle other phases similarly...
     });
 
