@@ -19,6 +19,8 @@ export default function App() {
   const [playlists, setPlaylists] = useState([]);
   const [eliminatedSongIndex, setEliminatedSongIndex] = useState(null);
   const [commentary, setCommentary] = useState('');
+  const [round, setRound] = useState(1);
+
 
   // Listen for backend events
   useEffect(() => {
@@ -39,12 +41,16 @@ export default function App() {
       setView('lobby'); // go to lobby after joining
     });
 
-    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists }) => {
+    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists, round }) => {
       console.log('Game phase changed to:', gamePhase);
       setGamePhase(gamePhase);
 
       if (playlists) {
         setPlaylists(playlists); // ✅ update state
+      }
+
+      if (round) {
+        setRound(round);
       }
 
       // Update the view
@@ -60,16 +66,12 @@ export default function App() {
         }
       }
 
-      {assignedPlaylists && assignedPlaylists.songs.map((song, idx) => (
-        <div key={idx} className="song-entry">
-          <p>{song}</p>
-          {assignedPlaylists.eliminations?.find(e => e.eliminatedIndex === idx) && (
-            <p className="comment"> {assignedPlaylists.eliminations.find(e => e.eliminatedIndex === idx).comment}</p>
-          )}
-        </div>
-      ))}
-
-      
+      // Cleanup listeners on unmount
+      return () => {
+        socket.off("phaseChange");
+        socket.off("playlistsUpdated");
+        socket.off("assignmentsUpdated");
+      };
 
       // Handle other phases similarly...
     });
@@ -171,34 +173,47 @@ export default function App() {
 
       {view === 'eliminate' && assignedPlaylistIndex !== null && (
         <div>
-          <h2 className="font-semibold">Eliminate a Song</h2>
+          <h2 className="font-semibold">Round {round}: Eliminate a Song</h2>
           <p>Phase: {gamePhase} | View: {view}</p>
-          <p>You've been assigned a playlist. Choose one song to eliminate obased on taste + theme and add a comment:</p>
+          <p>You've been assigned a playlist. Choose one song to eliminate based on taste + theme and add a comment:</p>
 
           <ul>
-            {playlists[assignedPlaylistIndex]?.songs.map((song, index) => (
-              <li key={index}>
-                <label>
-                  <input
-                    type="radio"
-                    name="eliminatedSong"
-                    value={index}
-                    checked={eliminatedSongIndex === index}
-                    onChange={() => setEliminatedSongIndex(index)}
-                  />
-                  {song}
-                </label>
-              </li>
-            ))}
+            {playlists[assignedPlaylistIndex]?.songs.map((song, index) => {
+              const elimination = playlists[assignedPlaylistIndex]?.eliminations?.find(
+                e => e.eliminatedIndex === index
+              );
+
+              return (
+                <li key={index} className="mb-2">
+                  <label>
+                    <input
+                      type="radio"
+                      name="eliminatedSong"
+                      value={index}
+                      checked={eliminatedSongIndex === index}
+                      onChange={() => setEliminatedSongIndex(index)}
+                    />
+                    {song}
+                  </label>
+                  {elimination && (
+                    <p className="text-sm text-red-600">
+                      ❌ Eliminated in Round {elimination.round}: {elimination.comment}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
 
           <textarea
             placeholder="Add your commentary..."
             value={commentary}
             onChange={(e) => setCommentary(e.target.value)}
+            className="input w-full mt-2"
           />
 
           <button
+            className="btn mt-2"
             disabled={eliminatedSongIndex === null || commentary.trim() === ''}
             onClick={() => {
               socket.emit('submitElimination', {
@@ -206,16 +221,19 @@ export default function App() {
                 alias,
                 playlistIndex: assignedPlaylistIndex,
                 eliminatedSongIndex,
-                commentary,
+                comment: commentary,
               });
 
-              setView('waiting'); // show waiting message until all players are done
+              setEliminatedSongIndex(null);
+              setCommentary('');
+              setView('waiting');
             }}
           >
-            Submit
+            Submit Elimination
           </button>
         </div>
       )}
+
 
     </div>
   );
