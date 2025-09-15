@@ -187,28 +187,27 @@ io.on('connection', socket => {
       return;
     }
 
-    // Initialize structures
-    if (!playlist.eliminations) playlist.eliminations = [];
-    if (!game.submissionsThisRound) game.submissionsThisRound = {};
+    // Find the song instead of splicing it
+      const song = playlist.songs.find(s => s.id === eliminatedSongId);
+      if (!song) return;
 
-    // Record elimination (store round info; set currentRound default to 1)
-    const roundNum = game.currentRound || 1;
-    playlist.eliminations.push({
-      round: roundNum,
-      by: alias,
-      eliminatedIndex: eliminatedSongIndex,
-      comment: commentary,
-    });
+      // Mark it eliminated
+      song.eliminated = true;
+      song.eliminatedRound = game.currentRound || 1;
+      song.eliminatedBy = alias;
+      song.comment = comment;
 
-    // Remove the eliminated song from the playlist's songs (use splice by index)
-    // Guard in case index is out of range
-    if (Number.isInteger(eliminatedSongIndex) && eliminatedSongIndex >= 0 && eliminatedSongIndex < playlist.songs.length) {
-      playlist.songs.splice(eliminatedSongIndex, 1);
-    } else {
-      console.warn(`Attempted to remove invalid song index ${eliminatedSongIndex} from playlist ${playlistIndex}`);
-    }
+      // Log separately
+      if (!playlist.eliminationLog) playlist.eliminationLog = [];
+      playlist.eliminationLog.push({
+        songTitle: song.title,
+        eliminatedRound: game.currentRound || 1,
+        eliminatedBy: alias,
+        comment
+      });
 
     // Mark that this player has submitted this round
+    if (!game.submissionsThisRound) game.submissionsThisRound = {};
     game.submissionsThisRound[alias] = true;
 
     console.log(`Elimination recorded: game=${gameId}, round=${roundNum}, by=${alias}, playlist=${playlistIndex}, idx=${eliminatedSongIndex}`);

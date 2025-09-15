@@ -179,25 +179,28 @@ export default function App() {
 
           <ul>
             {playlists[assignedPlaylistIndex]?.songs.map((song, index) => {
-              const elimination = playlists[assignedPlaylistIndex]?.eliminations?.find(
-                e => e.eliminatedIndex === index
-              );
+              const isEliminated = song.eliminated;
 
               return (
-                <li key={index} className="mb-2">
+                <li key={song.id || index} className="mb-2">
                   <label>
-                    <input
-                      type="radio"
-                      name="eliminatedSong"
-                      value={index}
-                      checked={eliminatedSongIndex === index}
-                      onChange={() => setEliminatedSongIndex(index)}
-                    />
-                    {song}
+                    {!isEliminated && (
+                      <input
+                        type="radio"
+                        name="eliminatedSong"
+                        value={song.id}
+                        checked={eliminatedSongIndex === song.id}
+                        onChange={() => setEliminatedSongIndex(song.id)}
+                      />
+                    )}
+                    {song.title}
                   </label>
-                  {elimination && (
+
+                  {isEliminated && (
                     <p className="text-sm text-red-600">
-                      ❌ Eliminated in Round {elimination.round}: {elimination.comment}
+                      ❌ Eliminated in Round {song.eliminatedRound} by {song.eliminatedBy}
+                      <br />
+                      <em>{song.comment}</em>
                     </p>
                   )}
                 </li>
@@ -205,12 +208,18 @@ export default function App() {
             })}
           </ul>
 
-          <textarea
-            placeholder="Add your commentary..."
-            value={commentary}
-            onChange={(e) => setCommentary(e.target.value)}
-            className="input w-full mt-2"
-          />
+          <div className="mt-4">
+            <h3 className="font-semibold">Elimination History</h3>
+            <ul className="list-disc list-inside text-sm">
+              {playlists[assignedPlaylistIndex]?.eliminationLog?.map((log, idx) => (
+                <li key={idx}>
+                  Round {log.eliminatedRound}: "{log.songTitle}" was eliminated by {log.eliminatedBy}
+                  <br />
+                  <em>{log.comment}</em>
+                </li>
+              ))}
+            </ul>
+          </div>
 
           <button
             className="btn mt-2"
@@ -219,8 +228,7 @@ export default function App() {
               socket.emit('submitElimination', {
                 gameId,
                 alias,
-                playlistIndex: assignedPlaylistIndex,
-                eliminatedSongIndex,
+                eliminatedSongId: eliminatedSongIndex, // ✅ now passing the song.id
                 comment: commentary,
               });
 
@@ -231,6 +239,15 @@ export default function App() {
           >
             Submit Elimination
           </button>
+
+
+          <textarea
+            placeholder="Add your commentary..."
+            value={commentary}
+            onChange={(e) => setCommentary(e.target.value)}
+            className="input w-full mt-2"
+          />
+
         </div>
       )}
 
