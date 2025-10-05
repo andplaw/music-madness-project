@@ -87,6 +87,7 @@ export default function App() {
       if (Array.isArray(updated)) setPlaylists(updated);
     });
 
+
     // assignmentsUpdated is an alternate event; update assignment map if received
     socket.on('assignmentsUpdated', assigned => {
       console.log('assignmentsUpdated received', assigned);
@@ -102,11 +103,16 @@ export default function App() {
     });
 
     // playlistSubmitted feedback
-    socket.on('playlistSubmitted', ({ alias: who }) => {
-      console.log(`Playlist submitted by ${who}`);
-      setPlaylistSubmitted(true);
-      setGamePhase('waiting');
+    socket.on('playlistSubmitted', ({ alias: submittedAlias }) => {
+      console.log(`Playlist submitted by ${submittedAlias}`);
+      
+      // Only set *this* player to waiting if it was them who submitted
+      if (submittedAlias === alias) {
+        setGamePhase('waiting');
+        setPlaylistSubmitted(true);
+      }
     });
+
 
     // Clean up on unmount
     return () => {
