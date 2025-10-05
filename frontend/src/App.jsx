@@ -24,70 +24,103 @@ export default function App() {
 
   // Listen for backend events
   useEffect(() => {
+    // game created / joined
     socket.on('gameCreated', ({ gameId, players, gamePhase }) => {
       console.log('Game created:', gameId);
       setJoined(true);
       setPlayerList(players);
       setGamePhase(gamePhase);
       setGameId(gameId);
-      setView('lobby'); // go to lobby after game is created
+      setView('lobby');
     });
 
-    socket.on('playerJoined', ({ gamePhase, alias, players }) => {
-      console.log('Player joined:', alias);
+    socket.on('playerJoined', ({ gamePhase, alias: joinedAlias, players }) => {
+      console.log('Player joined:', joinedAlias);
       setJoined(true);
-      setPlayerList(players)
-      setGamePhase(gamePhase); 
-      setView('lobby'); // go to lobby after joining
+      setPlayerList(players);
+      setGamePhase(gamePhase);
+      setView('lobby');
     });
 
-    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists, round }) => {
+    // Main phase change handler
+    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists: newPlaylists, round: newRound }) => {
       console.log('Game phase changed to:', gamePhase);
       setGamePhase(gamePhase);
 
-      if (playlists) {
-        setPlaylists(playlists); // ✅ update state
+      if (Array.isArray(newPlaylists)) {
+        setPlaylists(newPlaylists);
       }
 
-      if (round) {
-        setRound(round);
+      if (typeof newRound === 'number') {
+        setRound(newRound);
       }
 
-      // Update the view
       if (gamePhase === 'submission') {
         setView('submit');
-      } else if (gamePhase.startsWith('elimination')) {
-        console.log('Alias:', alias);
-        console.log('Assigned playlists:', assignedPlaylists);
-
-        if (assignedPlaylists && assignedPlaylists[alias] !== undefined) {
-          setAssignedPlaylistIndex(assignedPlaylists[alias]); // New state
-          setView('eliminate');
+      } else if (typeof gamePhase === 'string' && gamePhase.startsWith('elimination')) {
+        // assignedPlaylists is expected to be an object mapping alias -> playlistIndex
+        console.log('Assigned playlists payload:', assignedPlaylists);
+        // Find current player's assignment robustly (case-insensitive fallback)
+        if (assignedPlaylists) {
+          // Direct key match
+          let assigned = assignedPlaylists[alias];
+          if (assigned === undefined) {
+            // Try case-insensitive match
+            const found = Object.entries(assignedPlaylists).find(([key]) => key.toLowerCase() === alias.toLowerCase());
+            if (found) assigned = found[1];
+          }
+          if (assigned !== undefined) {
+            setAssignedPlaylistIndex(assigned);
+            setView('eliminate');
+          } else {
+            console.warn('No assignment found for alias:', alias);
+          }
         }
+      } else if (gamePhase === 'voting') {
+        setView('voting');
       }
-
-      // Cleanup listeners on unmount
-      return () => {
-        socket.off("phaseChange");
-        socket.off("playlistsUpdated");
-        socket.off("assignmentsUpdated");
-      };
-
-      // Handle other phases similarly...
     });
 
-    socket.on('playlistSubmitted', ({ alias }) => {
-      console.log(`Playlist submitted by ${alias}`);
+    // When playlists are updated (after eliminations), update frontend state
+    socket.on('playlistsUpdated', updated => {
+      console.log('playlistsUpdated received', updated);
+      if (Array.isArray(updated)) setPlaylists(updated);
+    });
+
+    // assignmentsUpdated is an alternate event; update assignment map if received
+    socket.on('assignmentsUpdated', assigned => {
+      console.log('assignmentsUpdated received', assigned);
+      // If this contains the current player's assignment, update assignedPlaylistIndex
+      if (assigned) {
+        let assignedForMe = assigned[alias];
+        if (assignedForMe === undefined) {
+          const found = Object.entries(assigned).find(([k]) => k.toLowerCase() === alias.toLowerCase());
+          if (found) assignedForMe = found[1];
+        }
+        if (assignedForMe !== undefined) setAssignedPlaylistIndex(assignedForMe);
+      }
+    });
+
+    // playlistSubmitted feedback
+    socket.on('playlistSubmitted', ({ alias: who }) => {
+      console.log(`Playlist submitted by ${who}`);
+      setPlaylistSubmitted(true);
       setGamePhase('waiting');
     });
 
+    // Clean up on unmount
     return () => {
       socket.off('gameCreated');
       socket.off('playerJoined');
-      socket.off('gamePhaseChanged')
+      socket.off('gamePhaseChanged');
+      socket.off('playlistsUpdated');
+      socket.off('assignmentsUpdated');
       socket.off('playlistSubmitted');
     };
-  }, [socket, players, alias]);
+  }, [alias]); // keep alias in deps so handlers see the latest alias
+
+
+
 
   const handleCreateGame = () => {
     if (!gameId || !password) return;
@@ -171,33 +204,48 @@ export default function App() {
         <p className="text-green-700">🎶 Playlist submitted! Waiting for others...</p>
       ))}
 
-      {view === 'eliminate' && assignedPlaylistIndex !== null && (
+      {view === 'eliminate' && assignedPlaylistIndex !== null && playlists[assignedPlaylistIndex] && (
         <div>
           <h2 className="font-semibold">Round {round}: Eliminate a Song</h2>
           <p>Phase: {gamePhase} | View: {view}</p>
           <p>You've been assigned a playlist. Choose one song to eliminate based on taste + theme and add a comment:</p>
 
           <ul>
-            {playlists[assignedPlaylistIndex]?.songs.map((song, index) => {
-              const isEliminated = song.eliminated;
+            {/*
+              songs may be objects {id,title,...} OR legacy strings.
+              We normalize each song to an object representation for rendering.
+            */}
+            {playlists[assignedPlaylistIndex].songs.map((rawSong, idx) => {
+              const song = (typeof rawSong === 'string')
+                ? { id: `idx-${idx}`, title: rawSong, eliminated: false }
+                : rawSong;
+
+              // Only show active songs as selectable
+              const selectable = !song.eliminated;
+              const songId = String(song.id); // always string for radio values
 
               return (
-                <li key={song.id || index} className="mb-2">
-                  <label>
-                    {!isEliminated && (
+                <li key={songId} className="mb-2">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {selectable ? (
                       <input
                         type="radio"
                         name="eliminatedSong"
-                        value={song.id}
-                        checked={eliminatedSongIndex === song.id}
-                        onChange={() => setEliminatedSongIndex(song.id)}
+                        value={songId}
+                        checked={String(eliminatedSongIndex) === songId}
+                        onChange={() => setEliminatedSongIndex(songId)}
                       />
+                    ) : (
+                      // keep layout aligned for eliminated items
+                      <span style={{ width: 18, display: 'inline-block' }} />
                     )}
-                    {song.title}
+                    <span style={{ textDecoration: song.eliminated ? 'line-through' : 'none' }}>
+                      {song.title}
+                    </span>
                   </label>
 
-                  {isEliminated && (
-                    <p className="text-sm text-red-600">
+                  {song.eliminated && (
+                    <p className="text-sm text-red-600 ml-6">
                       ❌ Eliminated in Round {song.eliminatedRound} by {song.eliminatedBy}
                       <br />
                       <em>{song.comment}</em>
@@ -208,11 +256,12 @@ export default function App() {
             })}
           </ul>
 
+          {/* Elimination history section (separate) */}
           <div className="mt-4">
             <h3 className="font-semibold">Elimination History</h3>
             <ul className="list-disc list-inside text-sm">
-              {playlists[assignedPlaylistIndex]?.eliminationLog?.map((log, idx) => (
-                <li key={idx}>
+              {(playlists[assignedPlaylistIndex].eliminationLog || []).map((log, idx) => (
+                <li key={idx} className="mb-2">
                   Round {log.eliminatedRound}: "{log.songTitle}" was eliminated by {log.eliminatedBy}
                   <br />
                   <em>{log.comment}</em>
@@ -221,26 +270,6 @@ export default function App() {
             </ul>
           </div>
 
-          <button
-            className="btn mt-2"
-            disabled={eliminatedSongIndex === null || commentary.trim() === ''}
-            onClick={() => {
-              socket.emit('submitElimination', {
-                gameId,
-                alias,
-                eliminatedSongId: eliminatedSongIndex, // ✅ now passing the song.id
-                comment: commentary,
-              });
-
-              setEliminatedSongIndex(null);
-              setCommentary('');
-              setView('waiting');
-            }}
-          >
-            Submit Elimination
-          </button>
-
-
           <textarea
             placeholder="Add your commentary..."
             value={commentary}
@@ -248,8 +277,30 @@ export default function App() {
             className="input w-full mt-2"
           />
 
+          <button
+            className="btn mt-2"
+            disabled={!eliminatedSongIndex || commentary.trim() === ''}
+            onClick={() => {
+              // emit the song id and comment exactly as backend expects
+              socket.emit('submitElimination', {
+                gameId,
+                alias,
+                playlistIndex: assignedPlaylistIndex,
+                eliminatedSongId: eliminatedSongIndex, // this should be the song.id (string)
+                comment: commentary,
+              });
+
+              // clear UI selection and show waiting state
+              setEliminatedSongIndex(null);
+              setCommentary('');
+              setView('waiting');
+            }}
+          >
+            Submit Elimination
+          </button>
         </div>
       )}
+
 
 
     </div>
