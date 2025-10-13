@@ -31,6 +31,11 @@ app.use(express.json());
 
 const games = {}; // Store games by gameId
 
+// utils: small helper to make unique IDs (simple but effective)
+function makeId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+}
+
 io.on('connection', socket => {
   socket.on('createGame', ({ gameId, password, alias }) => {
     if (!games[gameId]) {
@@ -86,33 +91,60 @@ io.on('connection', socket => {
   });
 
   socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
-    console.log('submitPlaylist triggered:', alias);
+    console.log('submitPlaylist triggered:', alias, playlist && playlist.length);
     const game = games[gameId];
     if (!game || game.gamePhase !== 'submission') {
-      console.log(`Invalid playlist submission: game=${gameId}, alias=${alias}`);
+      console.log(`Invalid playlist submission: game=${gameId}, alias=${alias}, phase=${game?.gamePhase}`);
       return;
     }
 
-    // Prevent duplicates
-    const alreadySubmitted = game.playlists?.some(p => p.alias === alias);
-    if (alreadySubmitted) {
+    // Prevent duplicates by alias
+    if (game.playlists?.some(p => p.alias === alias)) {
       console.log(`Duplicate playlist from ${alias} ignored.`);
       return;
     }
 
-    // Store the playlist
-    game.playlists = game.playlists || [];
-    game.playlists.push({ 
-      alias, 
-      songs: playlist, 
-      eliminations: [] 
+    // Normalize incoming playlist items (frontend sends {artist,title,link})
+    const normalizedSongs = (playlist || []).map(item => {
+      // If frontend sent string values for backward compatibility, accept that too:
+      if (!item || typeof item === 'string') {
+        const title = (item || '').toString();
+        return {
+          id: makeId(),
+          artist: '',
+          title,
+          link: '',
+          eliminated: false,
+          eliminatedRound: null,
+          eliminatedBy: null,
+          comment: null
+        };
+      } else {
+        return {
+          id: item.id || makeId(),
+          artist: item.artist || '',
+          title: item.title || '',
+          link: item.link || '',
+          eliminated: false,
+          eliminatedRound: null,
+          eliminatedBy: null,
+          comment: null
+        };
+      }
     });
 
-    console.log(`${alias} submitted playlist:`, playlist);
+    // Append playlist object for this game
+    game.playlists = game.playlists || [];
+    game.playlists.push({
+      alias,
+      songs: normalizedSongs,
+      eliminationLog: [] // history of eliminations for this playlist
+    });
+
+    console.log(`${alias} submitted playlist: ${normalizedSongs.length} songs`);
+    io.to(gameId).emit('playlistSubmitted', { alias });
     console.log(`Total submitted: ${game.playlists.length}/${game.players.length}`);
 
-
-    io.to(gameId).emit('playlistSubmitted', { alias });
 
     console.log('Debug: playlist count =', game.playlists.length);
     console.log('Debug: player count   =', game.players.length);
@@ -120,40 +152,30 @@ io.on('connection', socket => {
     console.log('Players in game:', game.players.map(p => p.alias));
 
 
-    // Check if all players have submitted
+    // If everyone submitted, assign & advance
     if (game.playlists.length === game.players.length) {
       console.log(`All playlists submitted for game ${gameId}`);
+      // ensure assignment history exists
+      if (!game.assignmentHistory) game.assignmentHistory = {};
 
-      // Assign playlists to each player for elimination
-      game.eliminations = [];
-      game.assignedPlaylists = assignPlaylistsToPlayers(game);
-      console.log('Assignments for round 1:', game.assignedPlaylists);
-
-      // Move to elimination phase
-      game.gamePhase = 'elimination_round_1';
-      console.log(`Game phase changed to: ${game.gamePhase}`);
-
-      // after assignPlaylistsToPlayers(game) has been called:
+      // Build assignments for round 1
+      game.assignedPlaylists = assignPlaylistsToPlayers(game); // returns mapping alias -> playlistIndex
+      // initialize round tracking
       game.currentRound = 1;
-
-      // set maxRounds to (initial longest playlist length - 1)
-      // (guard against zero-length playlists)
-      const maxSongs = Math.max(...game.playlists.map(p => p.songs.length));
+      // set maxRounds to initialLongest - 1 so game ends when one song remains
+      const maxSongs = Math.max(...game.playlists.map(p => (p.songs?.length || 0)));
       game.maxRounds = Math.max(0, maxSongs - 1);
 
-      // optionally store initialSongCount if you want to show progress
-      game.initialSongCount = maxSongs;
+      game.gamePhase = 'elimination_round_1';
+      console.log('Assignments for round 1:', game.assignedPlaylists);
+      console.log(`Game ${gameId} moving to ${game.gamePhase} (maxRounds=${game.maxRounds})`);
 
-      // finally emit the initial elimination phase (include assignedPlaylists & playlists)
       io.to(gameId).emit('gamePhaseChanged', {
         gamePhase: game.gamePhase,
         assignedPlaylists: game.assignedPlaylists,
         playlists: game.playlists,
         round: game.currentRound
       });
-
-
-      // Start assigning playlists here
     }
   });
 
@@ -170,97 +192,97 @@ io.on('connection', socket => {
   // submitElimination handler
   // =======================
   // submitElimination: frontend sends { gameId, alias, playlistIndex, eliminatedSongIndex, commentary }
-  socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIndex, commentary }) => {
-    const game = games[gameId];
-    if (!game) return;
+  socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIndex, comment }) => {
+  const game = games[gameId];
+  if (!game) return;
 
-    // Only accept eliminations during elimination rounds
-    if (!game.gamePhase || !game.gamePhase.startsWith('elimination')) {
-      console.log(`Rejected elimination (wrong phase) for game=${gameId}, alias=${alias}`);
-      return;
-    }
+  if (!game.gamePhase || !game.gamePhase.startsWith('elimination')) {
+    console.log(`Rejected elimination (wrong phase) for game=${gameId}, alias=${alias}`);
+    return;
+  }
 
-    // Ensure playlist index is valid
-    const playlist = game.playlists?.[playlistIndex];
-    if (!playlist) {
-      console.log(`Invalid playlistIndex ${playlistIndex} from ${alias} in game ${gameId}`);
-      return;
-    }
+  const playlist = game.playlists?.[playlistIndex];
+  if (!playlist) {
+    console.log(`Invalid playlistIndex ${playlistIndex} from ${alias}`);
+    return;
+  }
 
-    // Find the song instead of splicing it
-      const song = playlist.songs.find(s => s.id === eliminatedSongId);
-      if (!song) return;
+  // guard index
+  if (!Number.isInteger(eliminatedSongIndex) || eliminatedSongIndex < 0 || eliminatedSongIndex >= playlist.songs.length) {
+    console.log(`Invalid eliminatedSongIndex ${eliminatedSongIndex} for playlist ${playlistIndex}`);
+    return;
+  }
 
-      // Mark it eliminated
-      song.eliminated = true;
-      song.eliminatedRound = game.currentRound || 1;
-      song.eliminatedBy = alias;
-      song.comment = comment;
+  // mark song object (do not remove)
+  const song = playlist.songs[eliminatedSongIndex];
+  song.eliminated = true;
+  song.eliminatedRound = game.currentRound || 1;
+  song.eliminatedBy = alias;
+  song.comment = comment || '';
 
-      // Log separately
-      if (!playlist.eliminationLog) playlist.eliminationLog = [];
-      playlist.eliminationLog.push({
-        songTitle: song.title,
-        eliminatedRound: game.currentRound || 1,
-        eliminatedBy: alias,
-        comment
-      });
+  // push elimination log entry for history
+  playlist.eliminationLog = playlist.eliminationLog || [];
+  playlist.eliminationLog.push({
+    songInfo: [song.artist, song.title, song.link],
+    eliminatedRound: song.eliminatedRound,
+    eliminatedBy: alias,
+    comment: comment || ''
+  });
 
-    // Mark that this player has submitted this round
-    if (!game.submissionsThisRound) game.submissionsThisRound = {};
-    game.submissionsThisRound[alias] = true;
+  console.log(`Elimination recorded: game=${gameId}, playlist=${playlistIndex}, by=${alias}, song="${song.title}" (idx=${eliminatedSongIndex})`);
 
-    console.log(`Elimination recorded: game=${gameId}, round=${roundNum}, by=${alias}, playlist=${playlistIndex}, idx=${eliminatedSongIndex}`);
+  // track submissions for this round
+  game.roundSubmissions = game.roundSubmissions || {};
+  const roundKey = `r${game.currentRound || 1}`;
+  game.roundSubmissions[roundKey] = game.roundSubmissions[roundKey] || new Set();
+  game.roundSubmissions[roundKey].add(alias);
 
-    // Broadcast updated playlists (so UIs update to show comments / removed songs)
-    io.to(gameId).emit('playlistsUpdated', game.playlists);
+  // broadcast updated playlists so all clients show the elimination and logs
+  io.to(gameId).emit('playlistsUpdated', game.playlists);
 
-    // If maxRounds not initialized (edge), initialize here from playlist lengths
+  // check if all players have submitted this round
+  const submittedCount = game.roundSubmissions[roundKey].size;
+  const totalPlayers = game.players.length;
+  console.log(`Round ${game.currentRound}: ${submittedCount}/${totalPlayers} submissions`);
+
+  if (submittedCount === totalPlayers) {
+    // all submitted -> either rotate / next round, or final results
     if (!game.maxRounds) {
-      const maxSongs = Math.max(...game.playlists.map(p => (p.songs?.length ?? 0)));
-      // Number of elimination rounds = initial longest playlist length - 1
+      const maxSongs = Math.max(...game.playlists.map(p => (p.songs?.length || 0)));
       game.maxRounds = Math.max(0, maxSongs - 1);
     }
+    const roundNum = game.currentRound || 1;
 
-    // Ensure currentRound exists
-    if (!game.currentRound) game.currentRound = 1;
+    if (roundNum < game.maxRounds) {
+      // rotate and start next round
+      rotateAssignments(game, gameId);
+      game.currentRound = roundNum + 1;
+      game.gamePhase = `elimination_round_${game.currentRound}`;
 
-    // Check if all players have submitted for this round
-    const allSubmitted = game.players.every(p => !!game.submissionsThisRound[p.alias]);
+      // reset submissions for next round
+      // use new Set container for next round key
+      // (old roundSubmissions left for history)
+      io.to(gameId).emit('gamePhaseChanged', {
+        gamePhase: game.gamePhase,
+        assignedPlaylists: game.assignedPlaylists,
+        playlists: game.playlists,
+        round: game.currentRound
+      });
 
-    if (allSubmitted) {
-      console.log(`All eliminations submitted for game ${gameId}, round ${game.currentRound}`);
+      console.log(`Advanced to ${game.gamePhase}`);
+    } else {
+      // final results
+      game.gamePhase = 'final_results';
+      io.to(gameId).emit('gamePhaseChanged', {
+        gamePhase: game.gamePhase,
+        playlists: game.playlists
+      });
 
-      // Reset submissions for next round (we'll prepare it now)
-      game.submissionsThisRound = {};
-
-      // Decide whether to advance or go to voting
-      if (game.currentRound < game.maxRounds) {
-        // rotate assignments and increment round
-        rotateAssignments(game, gameId);
-        game.currentRound += 1;
-        game.gamePhase = `elimination_round_${game.currentRound}`;
-        console.log(`Advancing to ${game.gamePhase} for game ${gameId}`);
-
-        // Broadcast new phase + assignments + playlists
-        io.to(gameId).emit('gamePhaseChanged', {
-          gamePhase: game.gamePhase,
-          assignedPlaylists: game.assignedPlaylists,
-          playlists: game.playlists,
-          round: game.currentRound
-        });
-      } else {
-        // Final round done -> voting
-        game.gamePhase = 'voting';
-        console.log(`All rounds complete; moving to voting for game ${gameId}`);
-
-        io.to(gameId).emit('gamePhaseChanged', {
-          gamePhase: game.gamePhase,
-          playlists: game.playlists
-        });
-      }
+      console.log(`Game ${gameId} finished; emitted final_results`);
     }
-  });
+  }
+});
+
 
 
   // =======================

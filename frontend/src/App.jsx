@@ -9,7 +9,13 @@ export default function App() {
   const [gameId, setGameId] = useState('');
   const [password, setPassword] = useState('');
   const [alias, setAlias] = useState('');
-  const [playlist, setPlaylist] = useState(['', '', '', '', '']);
+  const [playlist, setPlaylist] = useState([
+    { artist: '', title: '', link: '' },
+    { artist: '', title: '', link: '' },
+    { artist: '', title: '', link: '' },
+    { artist: '', title: '', link: '' },
+    { artist: '', title: '', link: '' },
+  ]);
   const [joined, setJoined] = useState(false);
   const [players, setPlayerList] = useState([]);
   const [gamePhase, setGamePhase] = useState('lobby'); // 'joining', 'submitting', 'waiting'
@@ -140,15 +146,20 @@ export default function App() {
   };
 
   const handleSubmitPlaylist = () => {
-    if (playlist.some(song => song.trim() === '')) {
-      alert('All 5 songs must be filled in!');
+    const invalid = playlist.some(song =>
+      !song || !song.title || !song.artist || song.title.trim() === '' || song.artist.trim() === ''
+    );
+    if (invalid) {
+      alert('Each song must include an artist and title (link optional).');
       return;
     }
-    console.log('Playlist submitted with:', gameId, alias, playlist);
-    console.log('Socket connected:', socket?.connected);
+
+    // send as-is; backend will normalize ids and shape
+    console.log('Submitting playlist', { gameId, alias, playlist });
     socket.emit('submitPlaylist', { gameId, alias, playlist });
     setPlaylistSubmitted(true);
   };
+
 
   return (
     <div className="p-4 max-w-xl mx-auto space-y-4">
@@ -192,17 +203,38 @@ export default function App() {
           <h2 className="font-semibold">Your Playlist</h2>
           <p>Phase: {gamePhase} | View: {view}</p>
           {playlist.map((song, idx) => (
-            <input
-              key={idx}
-              value={song}
-              onChange={e => {
-                const updated = [...playlist];
-                updated[idx] = e.target.value;
-                setPlaylist(updated);
-              }}
-              placeholder={`Song ${idx + 1}`}
-              className="input"
-            />
+            <div key={idx} className="border p-2 mb-2 rounded">
+              <input
+                value={song.artist}
+                onChange={e => {
+                  const updated = [...playlist];
+                  updated[idx].artist = e.target.value;
+                  setPlaylist(updated);
+                }}
+                placeholder="Artist"
+                className="input mb-1"
+              />
+              <input
+                value={song.title}
+                onChange={e => {
+                  const updated = [...playlist];
+                  updated[idx].title = e.target.value;
+                  setPlaylist(updated);
+                }}
+                placeholder="Song Title"
+                className="input mb-1"
+              />
+              <input
+                value={song.link}
+                onChange={e => {
+                  const updated = [...playlist];
+                  updated[idx].link = e.target.value;
+                  setPlaylist(updated);
+                }}
+                placeholder="Link (YouTube, Spotify, etc.)"
+                className="input"
+              />
+            </div>
           ))}
           <button onClick={handleSubmitPlaylist} className="btn mt-2">Submit Playlist</button>
         </div>
@@ -213,67 +245,48 @@ export default function App() {
       {view === 'eliminate' && assignedPlaylistIndex !== null && playlists[assignedPlaylistIndex] && (
         <div>
           <h2 className="font-semibold">Round {round}: Eliminate a Song</h2>
-          <p>Phase: {gamePhase} | View: {view}</p>
-          <p>You've been assigned a playlist. Choose one song to eliminate based on taste + theme and add a comment:</p>
 
+          <h3 className="mt-4 font-semibold">Assigned Playlist ({playlists[assignedPlaylistIndex].alias})</h3>
           <ul>
-            {/*
-              songs may be objects {id,title,...} OR legacy strings.
-              We normalize each song to an object representation for rendering.
-            */}
-            {playlists[assignedPlaylistIndex].songs.map((rawSong, idx) => {
-              const song = (typeof rawSong === 'string')
-                ? { id: `idx-${idx}`, title: rawSong, eliminated: false }
-                : rawSong;
+            {playlists[assignedPlaylistIndex].songs.map((song, index) => (
+              <li key={song.id || index} className="mb-2 border-b pb-1">
+                <label style={{display:'flex', alignItems:'center', gap:8}}>
+                  <input
+                    type="radio"
+                    name="eliminatedSong"
+                    value={index}
+                    checked={eliminatedSongIndex === index}
+                    disabled={!!song.eliminated}
+                    onChange={() => setEliminatedSongIndex(index)}
+                  />
+                  <span style={{ textDecoration: song.eliminated ? 'line-through' : 'none' }}>
+                    {song.title} — {song.artist}
+                  </span>
+                </label>
 
-              // Only show active songs as selectable
-              const selectable = !song.eliminated;
-              const songId = String(song.id); // always string for radio values
+                {song.link && (
+                  <div className="ml-6">
+                    <a href={song.link} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Listen</a>
+                  </div>
+                )}
 
-              return (
-                <li key={songId} className="mb-2">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {selectable ? (
-                      <input
-                        type="radio"
-                        name="eliminatedSong"
-                        value={songId}
-                        checked={String(eliminatedSongIndex) === songId}
-                        onChange={() => setEliminatedSongIndex(songId)}
-                      />
-                    ) : (
-                      // keep layout aligned for eliminated items
-                      <span style={{ width: 18, display: 'inline-block' }} />
-                    )}
-                    <span style={{ textDecoration: song.eliminated ? 'line-through' : 'none' }}>
-                      {song.title}
-                    </span>
-                  </label>
-
-                  {song.eliminated && (
-                    <p className="text-sm text-red-600 ml-6">
-                      ❌ Eliminated in Round {song.eliminatedRound} by {song.eliminatedBy}
-                      <br />
-                      <em>{song.comment}</em>
-                    </p>
-                  )}
-                </li>
-              );
-            })}
+                {song.eliminated && (
+                  <p className="text-sm text-red-600 ml-6">
+                    ❌ Eliminated in Round {song.eliminatedRound} by {song.eliminatedBy}: {song.comment}
+                  </p>
+                )}
+              </li>
+            ))}
           </ul>
 
-          {/* Elimination history section (separate) */}
-          <div className="mt-4">
-            <h3 className="font-semibold">Elimination History</h3>
-            <ul className="list-disc list-inside text-sm">
-              {(playlists[assignedPlaylistIndex].eliminationLog || []).map((log, idx) => (
-                <li key={idx} className="mb-2">
-                  Round {log.eliminatedRound}: "{log.songTitle}" was eliminated by {log.eliminatedBy}
-                  <br />
-                  <em>{log.comment}</em>
-                </li>
-              ))}
-            </ul>
+          <h3 className="mt-4 font-semibold">Elimination History</h3>
+          <div className="text-sm bg-gray-100 p-2 rounded">
+            {(playlists[assignedPlaylistIndex].eliminationLog || []).map((log, i) => (
+              <div key={i} className="mb-2">
+                <strong>Round {log.eliminatedRound}</strong>: "{log.songInfo[1]}" by {log.songInfo[0]} — eliminated by {log.eliminatedBy}
+                <div><em>{log.comment}</em></div>
+              </div>
+            ))}
           </div>
 
           <textarea
@@ -285,18 +298,16 @@ export default function App() {
 
           <button
             className="btn mt-2"
-            disabled={!eliminatedSongIndex || commentary.trim() === ''}
+            disabled={eliminatedSongIndex === null || commentary.trim() === ''}
             onClick={() => {
-              // emit the song id and comment exactly as backend expects
               socket.emit('submitElimination', {
                 gameId,
                 alias,
                 playlistIndex: assignedPlaylistIndex,
-                eliminatedSongId: eliminatedSongIndex, // this should be the song.id (string)
+                eliminatedSongIndex,
                 comment: commentary,
               });
 
-              // clear UI selection and show waiting state
               setEliminatedSongIndex(null);
               setCommentary('');
               setView('waiting');
@@ -304,6 +315,28 @@ export default function App() {
           >
             Submit Elimination
           </button>
+        </div>
+      )}
+
+
+      {gamePhase === 'final_results' && (
+        <div>
+          <h2 className="text-xl font-bold">🎉 Final Results</h2>
+          {playlists.map((p, i) => (
+            <div key={i} className="border p-2 my-2 rounded">
+              <h3 className="font-semibold">{p.alias}'s Playlist</h3>
+              <ul>
+                {p.songs.map((s, j) => {
+                  const elim = p.eliminations?.find(e => e.eliminatedIndex === j);
+                  return (
+                    <li key={j}>
+                      {s.title} — {s.artist} {elim && <span className="text-red-500">(Eliminated Round {elim.round})</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </div>
       )}
 
