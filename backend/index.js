@@ -36,6 +36,40 @@ function makeId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
 }
 
+/**
+ * Safely find a player in a game by socket or alias.
+ * If the socket ID changed (common after reloads), this updates it.
+ * Returns the player object or null if not found.
+ */
+function getOrUpdatePlayer(game, socket, alias) {
+  if (!game) return null;
+
+  // First, try to find by current socket ID
+  let player = game.players.find(p => p.id === socket.id);
+  if (player) return player;
+
+  // Then, try to find by alias (reconnected player)
+  if (alias) {
+    player = game.players.find(p => p.alias === alias);
+    if (player) {
+      console.log(`🔄 Re-linking ${alias} to new socket ${socket.id}`);
+      player.id = socket.id;
+      return player;
+    }
+  }
+
+  if (createIfMissing && alias) {
+    console.log(`🆕 Creating missing player record for ${alias}`);
+    player = { id: socket.id, alias, playlist: null };
+    game.players.push(player);
+    return player;
+  }
+
+  console.warn(`⚠️ No player found for socket ${socket.id} (alias=${alias})`);
+  return null;
+}
+
+
 io.on('connection', socket => {
   socket.on('createGame', ({ gameId, password, alias }) => {
     if (!games[gameId]) {
@@ -60,10 +94,15 @@ io.on('connection', socket => {
   });
 
   socket.on('joinGame', ({ gameId, alias, password }) => {
-    socket.gameCode = gameId;
+    
+    if (!game) {
+      console.error(`Game ${gameId} not found`);
+      return;
+    }
+
     const game = games[gameId];
     if (game && game.password === password && !game.players.some(p => p.alias === alias)) {
-      const player = { alias, socketId: socket.id };
+      const player = getOrUpdatePlayer(game, socket, alias, true);
       game.players.push(player);
       socket.join(gameId);
 
@@ -75,6 +114,25 @@ io.on('connection', socket => {
         gamePhase: game.gamePhase 
       });
     }
+
+    socket.join(gameId);
+    socket.gameCode = gameId;
+
+    // Either find or create the player record
+    let player = game.players.find(p => p.alias === alias);
+    if (player) {
+      // ✅ Update their socket ID in case they reconnected
+      player.id = socket.id;
+    } else {
+      // ✅ Create a new player record if not found
+      player = { id: socket.id, alias, playlist: null };
+      game.players.push(player);
+    }
+
+    console.log(`Player joined game ${gameId}: ${alias}`);
+
+    io.to(gameId).emit('playerJoined', { alias, players: game.players });
+    
   });
 
   socket.on('startGame', ({ gameId }) => {
@@ -103,8 +161,8 @@ io.on('connection', socket => {
     // Ensure socket has game reference
     socket.gameCode = gameId;
 
-    const player = game.players.find(p => p.id === socket.id);
-    if (!player) return console.error('No player found for socket', socket.id);
+    const player = getOrUpdatePlayer(gameGame, socket, alias);
+    if (!player) return console.error(`No player found for socket ${socket.id} (${alias})`);
 
     // Prevent duplicate submission by alias
     if (game.playlists?.some(p => p.alias === alias)) {
