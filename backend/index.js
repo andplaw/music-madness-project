@@ -60,6 +60,7 @@ io.on('connection', socket => {
   });
 
   socket.on('joinGame', ({ gameId, alias, password }) => {
+    socket.gameCode = gameId;
     const game = games[gameId];
     if (game && game.password === password && !game.players.some(p => p.alias === alias)) {
       const player = { alias, socketId: socket.id };
