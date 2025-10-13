@@ -260,7 +260,7 @@ export default function App() {
                     onChange={() => setEliminatedSongIndex(index)}
                   />
                   <span style={{ textDecoration: song.eliminated ? 'line-through' : 'none' }}>
-                    {song.title} — {song.artist}
+                    {song.title} by {song.artist}
                   </span>
                 </label>
 
@@ -279,22 +279,22 @@ export default function App() {
             ))}
           </ul>
 
-          <h3 className="mt-4 font-semibold">Elimination History</h3>
-          <div className="text-sm bg-gray-100 p-2 rounded">
-            {(playlists[assignedPlaylistIndex].eliminationLog || []).map((log, i) => (
-              <div key={i} className="mb-2">
-                <strong>Round {log.eliminatedRound}</strong>: "{log.songInfo[1]}" by {log.songInfo[0]} — eliminated by {log.eliminatedBy}
-                <div><em>{log.comment}</em></div>
-              </div>
-            ))}
-          </div>
-
           <textarea
-            placeholder="Add your commentary..."
+            placeholder="Add your commentary to accompany your elimination..."
             value={commentary}
             onChange={(e) => setCommentary(e.target.value)}
             className="input w-full mt-2"
           />
+
+          <h3 className="mt-4 font-semibold">Elimination History</h3>
+          <div className="text-sm bg-gray-100 p-2 rounded">
+            {(playlists[assignedPlaylistIndex].eliminationLog || []).map((log, i) => (
+              <div key={i} className="mb-2">
+                <strong>Round {log.eliminatedRound}</strong>: "{log.song.title}" by {log.song.artist} — eliminated by {log.eliminatedBy}
+                <div><em>{log.comment}</em></div>
+              </div>
+            ))}
+          </div>
 
           <button
             className="btn mt-2"
