@@ -92,21 +92,27 @@ io.on('connection', socket => {
 
   socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
     console.log('submitPlaylist triggered:', alias, playlist && playlist.length);
+
     const game = games[gameId];
     if (!game || game.gamePhase !== 'submission') {
       console.log(`Invalid playlist submission: game=${gameId}, alias=${alias}, phase=${game?.gamePhase}`);
       return;
     }
 
-    // Prevent duplicates by alias
+    // Ensure socket has game reference
+    socket.gameCode = gameId;
+
+    const player = game.players.find(p => p.id === socket.id);
+    if (!player) return console.error('No player found for socket', socket.id);
+
+    // Prevent duplicate submission by alias
     if (game.playlists?.some(p => p.alias === alias)) {
       console.log(`Duplicate playlist from ${alias} ignored.`);
       return;
     }
 
-    // Normalize incoming playlist items (frontend sends {artist,title,link})
+    // Normalize playlist items
     const normalizedSongs = (playlist || []).map(item => {
-      // If frontend sent string values for backward compatibility, accept that too:
       if (!item || typeof item === 'string') {
         const title = (item || '').toString();
         return {
@@ -133,41 +139,39 @@ io.on('connection', socket => {
       }
     });
 
-    // Append playlist object for this game
+    // Store player's playlist
+    player.playlist = normalizedSongs;
+
+    // Append to game playlists
     game.playlists = game.playlists || [];
     game.playlists.push({
       alias,
       songs: normalizedSongs,
-      eliminationLog: [] // history of eliminations for this playlist
+      eliminationLog: []
     });
 
     console.log(`${alias} submitted playlist: ${normalizedSongs.length} songs`);
     io.to(gameId).emit('playlistSubmitted', { alias });
-    console.log(`Total submitted: ${game.playlists.length}/${game.players.length}`);
 
-
-    console.log('Debug: playlist count =', game.playlists.length);
-    console.log('Debug: player count   =', game.players.length);
+    console.log(`Progress: ${game.playlists.length}/${game.players.length}`);
+    console.log('Players:', game.players.map(p => p.alias));
     console.log('Playlists so far:', game.playlists.map(p => p.alias));
-    console.log('Players in game:', game.players.map(p => p.alias));
 
-
-    // If everyone submitted, assign & advance
+    // ✅ If everyone submitted, assign & advance
     if (game.playlists.length === game.players.length) {
-      console.log(`All playlists submitted for game ${gameId}`);
-      // ensure assignment history exists
+      console.log(`🎉 All playlists submitted for game ${gameId}`);
+
       if (!game.assignmentHistory) game.assignmentHistory = {};
 
       // Build assignments for round 1
-      game.assignedPlaylists = assignPlaylistsToPlayers(game); // returns mapping alias -> playlistIndex
-      // initialize round tracking
+      game.assignedPlaylists = assignPlaylistsToPlayers(game);
       game.currentRound = 1;
-      // set maxRounds to initialLongest - 1 so game ends when one song remains
-      const maxSongs = Math.max(...game.playlists.map(p => (p.songs?.length || 0)));
+
+      const maxSongs = Math.max(...game.playlists.map(p => p.songs?.length || 0));
       game.maxRounds = Math.max(0, maxSongs - 1);
 
       game.gamePhase = 'elimination_round_1';
-      console.log('Assignments for round 1:', game.assignedPlaylists);
+      console.log(`Assignments for round 1:`, game.assignedPlaylists);
       console.log(`Game ${gameId} moving to ${game.gamePhase} (maxRounds=${game.maxRounds})`);
 
       io.to(gameId).emit('gamePhaseChanged', {
@@ -176,8 +180,11 @@ io.on('connection', socket => {
         playlists: game.playlists,
         round: game.currentRound
       });
+
+      console.log('✅ Advanced to elimination_round_1');
     }
   });
+
 
   socket.on('eliminateSong', ({ gameId, alias, playlistIndex, songIndex, commentary }) => {
     const game = games[gameId];
