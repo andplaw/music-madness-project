@@ -193,95 +193,65 @@ io.on('connection', socket => {
   // =======================
   // submitElimination: frontend sends { gameId, alias, playlistIndex, eliminatedSongIndex, commentary }
   socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIndex, comment }) => {
-  const game = games[gameId];
-  if (!game) return;
+    const game = games[gameId];
+    if (!game) return;
 
-  if (!game.gamePhase || !game.gamePhase.startsWith('elimination')) {
-    console.log(`Rejected elimination (wrong phase) for game=${gameId}, alias=${alias}`);
-    return;
-  }
+    if (!game.gamePhase || !game.gamePhase.startsWith('elimination')) {
+      console.log(`Rejected elimination (wrong phase) for game=${gameId}, alias=${alias}`);
+      return;
+    }
 
-  const playlist = game.playlists?.[playlistIndex];
-  if (!playlist) {
-    console.log(`Invalid playlistIndex ${playlistIndex} from ${alias}`);
-    return;
-  }
+    const playlist = game.playlists?.[playlistIndex];
+    if (!playlist) {
+      console.log(`Invalid playlistIndex ${playlistIndex} from ${alias}`);
+      return;
+    }
 
-  // guard index
-  if (!Number.isInteger(eliminatedSongIndex) || eliminatedSongIndex < 0 || eliminatedSongIndex >= playlist.songs.length) {
-    console.log(`Invalid eliminatedSongIndex ${eliminatedSongIndex} for playlist ${playlistIndex}`);
-    return;
-  }
+    // Guard index
+    if (!Number.isInteger(eliminatedSongIndex) || eliminatedSongIndex < 0 || eliminatedSongIndex >= playlist.songs.length) {
+      console.log(`Invalid eliminatedSongIndex ${eliminatedSongIndex} for playlist ${playlistIndex}`);
+      return;
+    }
 
-  // mark song object (do not remove)
-  const song = playlist.songs[eliminatedSongIndex];
-  song.eliminated = true;
-  song.eliminatedRound = game.currentRound || 1;
-  song.eliminatedBy = alias;
-  song.comment = comment || '';
+    // Mark song as eliminated (do not remove from array)
+    const song = playlist.songs[eliminatedSongIndex];
+    song.eliminated = true;
+    song.eliminatedRound = game.currentRound || 1;
+    song.eliminatedBy = alias;
+    song.comment = comment || '';
 
-  // push elimination log entry for history
-  playlist.eliminationLog = playlist.eliminationLog || [];
-  playlist.eliminationLog.push({
-    songInfo: [song.artist, song.title, song.link],
-    eliminatedRound: song.eliminatedRound,
-    eliminatedBy: alias,
-    comment: comment || ''
+    // Ensure playlist has an eliminationLog array
+    playlist.eliminationLog = playlist.eliminationLog || [];
+    playlist.eliminationLog.push({
+      song: { artist: song.artist, title: song.title, link: song.link },
+      eliminatedRound: song.eliminatedRound,
+      eliminatedBy: alias,
+      comment: comment || ''
+    });
+
+    console.log(`Elimination recorded: ${song.title} by ${song.artist}, playlist ${playlistIndex}, round ${song.eliminatedRound}`);
+
+    // Track round submissions
+    if (!game.roundSubmissions) game.roundSubmissions = {};
+    const roundKey = `r${game.currentRound || 1}`;
+    game.roundSubmissions[roundKey] = game.roundSubmissions[roundKey] || new Set();
+    game.roundSubmissions[roundKey].add(alias);
+
+    // Broadcast the updated playlists so everyone sees the results
+    io.to(gameId).emit('playlistsUpdated', game.playlists);
+
+    // Check if everyone submitted for this round
+    const submittedCount = game.roundSubmissions[roundKey].size;
+    const totalPlayers = game.players.length;
+
+    console.log(`Round ${game.currentRound}: ${submittedCount}/${totalPlayers} eliminations submitted`);
+
+    if (submittedCount === totalPlayers) {
+      console.log(`All eliminations received for round ${game.currentRound}`);
+      advanceGamePhase(game, io, gameId);
+    }
   });
 
-  console.log(`Elimination recorded: game=${gameId}, playlist=${playlistIndex}, by=${alias}, song="${song.title}" (idx=${eliminatedSongIndex})`);
-
-  // track submissions for this round
-  game.roundSubmissions = game.roundSubmissions || {};
-  const roundKey = `r${game.currentRound || 1}`;
-  game.roundSubmissions[roundKey] = game.roundSubmissions[roundKey] || new Set();
-  game.roundSubmissions[roundKey].add(alias);
-
-  // broadcast updated playlists so all clients show the elimination and logs
-  io.to(gameId).emit('playlistsUpdated', game.playlists);
-
-  // check if all players have submitted this round
-  const submittedCount = game.roundSubmissions[roundKey].size;
-  const totalPlayers = game.players.length;
-  console.log(`Round ${game.currentRound}: ${submittedCount}/${totalPlayers} submissions`);
-
-  if (submittedCount === totalPlayers) {
-    // all submitted -> either rotate / next round, or final results
-    if (!game.maxRounds) {
-      const maxSongs = Math.max(...game.playlists.map(p => (p.songs?.length || 0)));
-      game.maxRounds = Math.max(0, maxSongs - 1);
-    }
-    const roundNum = game.currentRound || 1;
-
-    if (roundNum < game.maxRounds) {
-      // rotate and start next round
-      rotateAssignments(game, gameId);
-      game.currentRound = roundNum + 1;
-      game.gamePhase = `elimination_round_${game.currentRound}`;
-
-      // reset submissions for next round
-      // use new Set container for next round key
-      // (old roundSubmissions left for history)
-      io.to(gameId).emit('gamePhaseChanged', {
-        gamePhase: game.gamePhase,
-        assignedPlaylists: game.assignedPlaylists,
-        playlists: game.playlists,
-        round: game.currentRound
-      });
-
-      console.log(`Advanced to ${game.gamePhase}`);
-    } else {
-      // final results
-      game.gamePhase = 'final_results';
-      io.to(gameId).emit('gamePhaseChanged', {
-        gamePhase: game.gamePhase,
-        playlists: game.playlists
-      });
-
-      console.log(`Game ${gameId} finished; emitted final_results`);
-    }
-  }
-});
 
 
 
@@ -365,6 +335,33 @@ io.on('connection', socket => {
 
 function gamePhaseIsElimination(game) {
   return game.gamePhase && game.gamePhase.startsWith('elimination');
+}
+
+function advanceGamePhase(game, io, gameId) {
+  const totalPlayers = game.players.length;
+  const maxRounds = game.maxRounds || totalPlayers - 1;
+
+  if (!game.currentRound) game.currentRound = 1;
+
+  if (game.currentRound < maxRounds) {
+    game.currentRound++;
+    game.gamePhase = `elimination_round_${game.currentRound}`;
+    rotateAssignments(game, gameId);
+    io.to(gameId).emit('gamePhaseChanged', {
+      gamePhase: game.gamePhase,
+      assignedPlaylists: game.assignedPlaylists,
+      playlists: game.playlists,
+      round: game.currentRound
+    });
+    console.log(`Advanced to ${game.gamePhase}`);
+  } else {
+    game.gamePhase = 'voting';
+    io.to(gameId).emit('gamePhaseChanged', {
+      gamePhase: 'voting',
+      playlists: game.playlists
+    });
+    console.log(`All elimination rounds complete — moving to voting phase`);
+  }
 }
 
 
