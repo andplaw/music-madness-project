@@ -9,22 +9,22 @@ app.use(cors());
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
+  cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on ${PORT}`));
 
 app.use(express.json());
 
-const games = {}; // store games by gameId
+/* -----------------------
+   In-memory game storage
+   ----------------------- */
+const games = {}; // { [gameId]: game }
 
-// --- utils
+/* -----------------------
+   helpers / utils
+   ----------------------- */
 function makeId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
 }
@@ -32,7 +32,6 @@ function makeId() {
 /**
  * Find or re-link a player record for a game.
  * If createIfMissing === true and alias provided, a new player will be created.
- * Returns the player object or null.
  */
 function getOrUpdatePlayer(game, socket, alias, createIfMissing = false) {
   if (!game) return null;
@@ -45,7 +44,7 @@ function getOrUpdatePlayer(game, socket, alias, createIfMissing = false) {
   if (alias) {
     player = game.players.find(p => p.alias === alias);
     if (player) {
-      console.log(`🔁 Re-linking alias "${alias}" to socket ${socket.id}`);
+      // re-link socket id
       player.id = socket.id;
       return player;
     }
@@ -53,9 +52,8 @@ function getOrUpdatePlayer(game, socket, alias, createIfMissing = false) {
 
   // 3) optionally create
   if (createIfMissing && alias) {
-    const newPlayer = { id: socket.id, alias, playlist: null };
+    const newPlayer = { id: socket.id, alias, playlist: null, hasSubmittedElimination: false };
     game.players.push(newPlayer);
-    console.log(`🆕 Created new player for alias "${alias}" with socket ${socket.id}`);
     return newPlayer;
   }
 
@@ -63,48 +61,44 @@ function getOrUpdatePlayer(game, socket, alias, createIfMissing = false) {
 }
 
 /**
- * Assign playlists to players (no player should receive their own).
- * Returns an object mapping alias -> playlistIndex.
+ * Assign playlists to players (ensures nobody receives their own playlist).
+ * Attempts to avoid repeating prior assignments (assignmentHistory) when possible.
+ * Returns mapping alias -> playlistIndex.
  */
 function assignPlaylistsToPlayers(game) {
-  const assigned = {};
-  const total = game.playlists.length;
   const aliases = game.players.map(p => p.alias);
-
-  // initialize assignment history
-  if (!game.assignmentHistory) {
-    game.assignmentHistory = {};
-    for (const a of aliases) game.assignmentHistory[a] = [];
-  }
-
-  // pool of indices
+  const total = game.playlists.length;
   const unassigned = [...Array(total).keys()];
+  if (!game.assignmentHistory) game.assignmentHistory = {};
+  for (const a of aliases) if (!game.assignmentHistory[a]) game.assignmentHistory[a] = [];
 
-  for (const alias of aliases) {
+  const assigned = {};
+
+  // iterate players in random order for fairness
+  const order = [...aliases].sort(() => Math.random() - 0.5);
+
+  for (const alias of order) {
     const history = game.assignmentHistory[alias] || [];
-
-    // candidates: not their own playlist and not in history
+    // candidate indices: unassigned and not owner's playlist and not in history
     const candidates = unassigned.filter(idx => {
       const pl = game.playlists[idx];
       return pl && pl.alias !== alias && !history.includes(idx);
     });
 
-    let chosen;
+    let choice;
     if (candidates.length === 0) {
-      // fallback: take any unassigned not their own
+      // fallback: any unassigned that isn't their own
       const fallback = unassigned.find(idx => game.playlists[idx].alias !== alias);
-      chosen = fallback !== undefined ? fallback : unassigned[0];
+      choice = fallback !== undefined ? fallback : unassigned[0];
     } else {
-      chosen = candidates[Math.floor(Math.random() * candidates.length)];
+      choice = candidates[Math.floor(Math.random() * candidates.length)];
     }
 
-    assigned[alias] = chosen;
-    const removeAt = unassigned.indexOf(chosen);
+    assigned[alias] = choice;
+    const removeAt = unassigned.indexOf(choice);
     if (removeAt !== -1) unassigned.splice(removeAt, 1);
 
-    // update history
-    game.assignmentHistory[alias] = game.assignmentHistory[alias] || [];
-    game.assignmentHistory[alias].push(chosen);
+    game.assignmentHistory[alias].push(choice);
   }
 
   game.assignedPlaylists = assigned;
@@ -112,73 +106,75 @@ function assignPlaylistsToPlayers(game) {
 }
 
 /**
- * Rotate assignments for next round (simple rotate/round-robin)
+ * Rotate assignments for next round (simple rotate but preserve "no own playlist" rule).
+ * This function will try to produce assignments where no player gets own playlist.
  */
-function rotateAssignments(game, gameId) {
-  const aliases = game.players.map(p => p.alias);
-  const total = game.playlists.length;
-  const newAssignments = {};
+function rotateAssignments(game) {
+  // We'll attempt to create new assignments avoiding own playlist and recent history
+  return assignPlaylistsToPlayers(game);
+}
 
-  // If no previous assignment, do a simple assignment (index -> index)
-  if (!game.assignedPlaylists) {
-    for (let i = 0; i < aliases.length; i++) {
-      newAssignments[aliases[i]] = i % total;
-      game.assignmentHistory = game.assignmentHistory || {};
-      game.assignmentHistory[aliases[i]] = game.assignmentHistory[aliases[i]] || [];
-      game.assignmentHistory[aliases[i]].push(newAssignments[aliases[i]]);
-    }
-  } else {
-    // shift previous assignment by +1 (mod total)
-    for (const alias of aliases) {
-      const prev = game.assignedPlaylists[alias];
-      const next = (typeof prev === 'number') ? (prev + 1) % total : 0;
-      newAssignments[alias] = next;
-      game.assignmentHistory = game.assignmentHistory || {};
-      game.assignmentHistory[alias] = game.assignmentHistory[alias] || [];
-      game.assignmentHistory[alias].push(next);
-    }
-  }
+/* -----------------------
+   Core game lifecycle helpers
+   ----------------------- */
+function computeMaxRounds(game) {
+  // default initial playlists length based on longest playlist
+  const maxSongs = Math.max(...game.playlists.map(p => (p.songs?.length || 0)));
+  // Number of elimination rounds before 1 remains = initial length - 1
+  return Math.max(0, maxSongs - 1);
+}
 
-  game.assignedPlaylists = newAssignments;
-  io.to(gameId).emit('assignmentsUpdated', game.assignedPlaylists);
-  console.log(`rotateAssignments: game ${gameId} =>`, game.assignedPlaylists);
+function allPlaylistsHaveOneRemaining(game) {
+  return game.playlists.every(pl => (pl.songs.filter(s => !s.eliminated).length === 1));
 }
 
 /**
- * Advance to next round or finish game
+ * Advance the game after a round completes.
+ * If final condition reached -> produce final mix and go to final_mix
+ * Else rotate assignments and move to next elimination round.
  */
-function advanceGamePhase(game, gameId) {
-  const totalPlayers = game.players.length;
-  // if maxRounds not calculated, compute as longest playlist length - 1
-  if (!game.maxRounds) {
-    const maxSongs = Math.max(...game.playlists.map(p => p.songs?.length || 0));
-    game.maxRounds = Math.max(0, maxSongs - 1);
-  }
-  if (!game.currentRound) game.currentRound = 1;
+function advanceAfterRound(game, gameId) {
+  // Reset per-round hasSubmittedElimination flags
+  game.players.forEach(p => p.hasSubmittedElimination = false);
+  // If final condition (each playlist now has 1 active song) -> final mix & voting
+  if (allPlaylistsHaveOneRemaining(game) || (game.currentRound && game.currentRound >= (game.maxRounds || computeMaxRounds(game)))) {
+    // Build final mix: collect the single remaining song from each playlist
+    const finalMix = game.playlists.map((pl, idx) => {
+      const remaining = pl.songs.find(s => !s.eliminated);
+      return {
+        playlistIndex: idx,
+        originAlias: pl.alias,
+        song: remaining || null
+      };
+    }).filter(x => x.song !== null);
 
-  if (game.currentRound < game.maxRounds) {
-    game.currentRound++;
-    game.gamePhase = `elimination_round_${game.currentRound}`;
-    rotateAssignments(game, gameId);
+    game.finalMix = finalMix;
+    game.gamePhase = 'final_mix';
     io.to(gameId).emit('gamePhaseChanged', {
       gamePhase: game.gamePhase,
-      assignedPlaylists: game.assignedPlaylists,
       playlists: game.playlists,
-      round: game.currentRound
+      finalMix: game.finalMix
     });
-    console.log(`Advanced to ${game.gamePhase} for game ${gameId}`);
-  } else {
-    // finish -> voting or final_results
-    game.gamePhase = 'final_results';
-    io.to(gameId).emit('gamePhaseChanged', {
-      gamePhase: game.gamePhase,
-      playlists: game.playlists
-    });
-    console.log(`Game ${gameId} complete -> ${game.gamePhase}`);
+    console.log(`Game ${gameId} moved to final_mix with ${finalMix.length} songs.`);
+    return;
   }
+
+  // Otherwise advance to next elimination round
+  game.currentRound = (game.currentRound || 1) + 1;
+  game.gamePhase = `elimination_round_${game.currentRound}`;
+  rotateAssignments(game); // will set game.assignedPlaylists
+  io.to(gameId).emit('gamePhaseChanged', {
+    gamePhase: game.gamePhase,
+    assignedPlaylists: game.assignedPlaylists,
+    playlists: game.playlists,
+    round: game.currentRound
+  });
+  console.log(`Advanced ${gameId} to ${game.gamePhase}`);
 }
 
-// --- Socket handlers
+/* -----------------------
+   Socket.IO handlers
+   ----------------------- */
 io.on('connection', socket => {
   console.log('A user connected:', socket.id);
 
@@ -193,17 +189,20 @@ io.on('connection', socket => {
       return;
     }
 
-    // create game + initial player
-    const player = { id: socket.id, alias, playlist: null };
+    const player = { id: socket.id, alias, playlist: null, hasSubmittedElimination: false };
     games[gameId] = {
       players: [player],
-      playlists: [],
+      playlists: [], // will store { alias, songs: [{...}], eliminationLog: [] }
       password: password || '',
       gamePhase: 'lobby',
-      assignmentHistory: {}
+      assignedPlaylists: {},
+      assignmentHistory: {},
+      currentRound: 0,
+      maxRounds: 0,
+      finalMix: null,
+      votes: {}
     };
 
-    // link socket
     socket.join(gameId);
     socket.gameId = gameId;
 
@@ -216,7 +215,33 @@ io.on('connection', socket => {
     });
   });
 
-  // Join game
+  // Rejoin (client should emit on page load if it has saved gameId + alias)
+  socket.on('rejoinGame', ({ gameId, alias }) => {
+    const game = games[gameId];
+    if (!game) {
+      socket.emit('rejoinResult', { success: false, message: 'Game not found' });
+      return;
+    }
+
+    socket.join(gameId);
+    socket.gameId = gameId;
+    const player = getOrUpdatePlayer(game, socket, alias, true);
+
+    // send back current phase, assignments if any, playlists, round and finalMix
+    const payload = {
+      success: true,
+      gamePhase: game.gamePhase,
+      assignedPlaylists: game.assignedPlaylists,
+      playlists: game.playlists,
+      round: game.currentRound,
+      finalMix: game.finalMix
+    };
+
+    socket.emit('rejoinResult', payload);
+    console.log(`Player ${alias} rejoined game ${gameId} (socket ${socket.id})`);
+  });
+
+  // Join game (new player)
   socket.on('joinGame', ({ gameId, alias, password }) => {
     if (!gameId) {
       socket.emit('error', { message: 'Missing gameId' });
@@ -225,141 +250,88 @@ io.on('connection', socket => {
     const game = games[gameId];
     if (!game) {
       socket.emit('error', { message: 'Game not found' });
-      console.error(`Game ${gameId} not found for join attempt`);
       return;
     }
-    // password check
+
+    // check password
     if (game.password && game.password !== password) {
       socket.emit('error', { message: 'Invalid password' });
       return;
     }
 
-    // re-link or add player
     socket.join(gameId);
     socket.gameId = gameId;
+
+    // create or relink player
     const player = getOrUpdatePlayer(game, socket, alias, true);
 
-    // if alias conflict (another player already using alias), reject
-    const aliasConflict = game.players.some(p => p.alias === alias && p.id !== socket.id);
-    if (aliasConflict) {
-      socket.emit('error', { message: 'Alias already taken in this game' });
+    // alias conflict check (someone else using alias)
+    const conflict = game.players.some(p => p.alias === alias && p.id !== socket.id);
+    if (conflict) {
+      socket.emit('error', { message: 'Alias already taken' });
       return;
     }
-
-    console.log(`Player joined game ${gameId}: ${player.alias} (socket ${socket.id})`);
 
     io.to(gameId).emit('playerJoined', {
       alias: player.alias,
       players: game.players.map(p => p.alias),
       gamePhase: game.gamePhase
     });
+
+    console.log(`Player joined game ${gameId}: ${player.alias} (socket ${socket.id})`);
   });
 
-  // Start game
+  // Start game (host / first player triggers)
   socket.on('startGame', ({ gameId }) => {
     const game = games[gameId];
-    if (!game) {
-      socket.emit('error', { message: 'Game not found' });
-      return;
-    }
-    if (game.gamePhase !== 'lobby') {
-      socket.emit('error', { message: 'Game already started' });
-      return;
-    }
+    if (!game) { socket.emit('error', { message: 'Game not found' }); return; }
+    if (game.gamePhase !== 'lobby') { socket.emit('error', { message: 'Game already started' }); return; }
 
     game.gamePhase = 'submission';
-    console.log(`Game ${gameId} started. Accepting playlists.`);
     io.to(gameId).emit('gamePhaseChanged', { gamePhase: 'submission' });
+    console.log(`Game ${gameId} started (submission phase)`);
   });
 
   // Submit playlist
   socket.on('submitPlaylist', ({ gameId, alias, playlist }) => {
-    console.log('submitPlaylist triggered:', alias, playlist && playlist.length);
     const game = games[gameId];
     if (!game || game.gamePhase !== 'submission') {
-      console.log(`Invalid playlist submission: game=${gameId}, alias=${alias}, phase=${game?.gamePhase}`);
-      socket.emit('error', { message: 'Invalid phase or game' });
+      socket.emit('error', { message: 'Invalid game or phase' });
       return;
     }
 
-    // ensure socket is linked
     socket.gameId = gameId;
-
-    // find or create player record
     const player = getOrUpdatePlayer(game, socket, alias, true);
-    if (!player) {
-      console.error('No player found/created for', alias);
-      socket.emit('error', { message: 'Player not found' });
+    if (!player) { socket.emit('error', { message: 'Player not found' }); return; }
+
+    // Avoid duplicate playlist submissions by alias
+    if (game.playlists.some(p => p.alias === alias)) {
+      socket.emit('error', { message: 'Playlist already submitted' });
       return;
     }
 
-    // Prevent duplicates by alias
-    if (game.playlists?.some(p => p.alias === alias)) {
-      console.log(`Duplicate playlist from ${alias} ignored.`);
-      socket.emit('error', { message: 'Duplicate playlist' });
-      return;
-    }
-
-    // Normalize incoming playlist items into song objects
+    // Normalize songs -> ensure each item is an object with id, artist, title, link
     const normalizedSongs = (playlist || []).map(item => {
       if (!item || typeof item === 'string') {
-        return {
-          id: makeId(),
-          artist: '',
-          title: (item || '').toString(),
-          link: '',
-          eliminated: false,
-          eliminatedRound: null,
-          eliminatedBy: null,
-          comment: null
-        };
-      } else {
-        return {
-          id: item.id || makeId(),
-          artist: item.artist || '',
-          title: item.title || '',
-          link: item.link || '',
-          eliminated: false,
-          eliminatedRound: null,
-          eliminatedBy: null,
-          comment: null
-        };
+        return { id: makeId(), artist: '', title: (item || '').toString(), link: '', eliminated: false, eliminatedRound: null, eliminatedBy: null, comment: null };
       }
+      return { id: item.id || makeId(), artist: item.artist || '', title: item.title || '', link: item.link || '', eliminated: false, eliminatedRound: null, eliminatedBy: null, comment: null };
     });
 
-    // store player playlist and append to game.playlists
     player.playlist = normalizedSongs;
-    game.playlists = game.playlists || [];
-    game.playlists.push({
-      alias,
-      songs: normalizedSongs,
-      eliminationLog: []
-    });
+    game.playlists.push({ alias, songs: normalizedSongs, eliminationLog: [] });
 
-    console.log(`${alias} submitted playlist: ${normalizedSongs.length} songs`);
     io.to(gameId).emit('playlistSubmitted', { alias });
+    io.to(gameId).emit('playlistsUpdated', game.playlists);
 
-    console.log(`Progress: ${game.playlists.length}/${game.players.length}`);
-    console.log('Players:', game.players.map(p => p.alias));
-    console.log('Playlists so far:', game.playlists.map(p => p.alias));
+    console.log(`${alias} submitted a playlist (${normalizedSongs.length} songs). ${game.playlists.length}/${game.players.length} submitted.`);
 
-    // If everyone submitted, assign & advance
+    // If everyone submitted -> build assignments and start elimination_round_1
     if (game.playlists.length === game.players.length) {
-      console.log(`🎉 All playlists submitted for game ${gameId}`);
-
-      // ensure assignment history exists
-      if (!game.assignmentHistory) game.assignmentHistory = {};
-
-      // Build assignments for round 1
       game.assignedPlaylists = assignPlaylistsToPlayers(game);
       game.currentRound = 1;
-
-      const maxSongs = Math.max(...game.playlists.map(p => p.songs?.length || 0));
-      game.maxRounds = Math.max(0, maxSongs - 1);
-
-      game.gamePhase = 'elimination_round_1';
-      console.log('Assignments for round 1:', game.assignedPlaylists);
-      console.log(`Game ${gameId} moving to ${game.gamePhase} (maxRounds=${game.maxRounds})`);
+      game.maxRounds = computeMaxRounds(game);
+      game.gamePhase = `elimination_round_${game.currentRound}`;
 
       io.to(gameId).emit('gamePhaseChanged', {
         gamePhase: game.gamePhase,
@@ -367,86 +339,140 @@ io.on('connection', socket => {
         playlists: game.playlists,
         round: game.currentRound
       });
+
+      console.log(`All playlists in. ${gameId} -> ${game.gamePhase}`);
     }
   });
 
-  // submitElimination: frontend sends { gameId, alias, playlistIndex, eliminatedSongIndex, comment }
+  // Submit elimination: player eliminates one song from an assigned playlist
   socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIndex, comment }) => {
     const game = games[gameId];
-    if (!game) return;
-
+    if (!game) { socket.emit('error', { message: 'Game not found' }); return; }
     if (!game.gamePhase || !game.gamePhase.startsWith('elimination')) {
-      console.log(`Rejected elimination (wrong phase) for game=${gameId}, alias=${alias}`);
-      return;
+      socket.emit('error', { message: 'Not in elimination phase' }); return;
     }
 
-    const playlist = game.playlists?.[playlistIndex];
-    if (!playlist) {
-      console.log(`Invalid playlistIndex ${playlistIndex} from ${alias}`);
-      return;
+    // validate player
+    const player = getOrUpdatePlayer(game, socket, alias, false);
+    if (!player) { socket.emit('error', { message: 'Player not recognized' }); return; }
+
+    // ensure player is assigned to that playlist
+    const assignedIndex = game.assignedPlaylists?.[alias];
+    if (assignedIndex === undefined || assignedIndex !== playlistIndex) {
+      socket.emit('error', { message: 'You are not assigned to that playlist' }); return;
     }
 
-    // Guard index
+    const playlist = game.playlists[playlistIndex];
+    if (!playlist) { socket.emit('error', { message: 'Playlist not found' }); return; }
+
+    // Protect: player should never be allowed to eliminate from their own playlist (server-side check)
+    if (playlist.alias === alias) {
+      socket.emit('error', { message: 'Cannot eliminate from your own playlist' }); return;
+    }
+
+    // validate song index
     if (!Number.isInteger(eliminatedSongIndex) || eliminatedSongIndex < 0 || eliminatedSongIndex >= playlist.songs.length) {
-      console.log(`Invalid eliminatedSongIndex ${eliminatedSongIndex} for playlist ${playlistIndex}`);
-      return;
+      socket.emit('error', { message: 'Invalid song index' }); return;
     }
 
-    // Mark song as eliminated (do not remove from array)
     const song = playlist.songs[eliminatedSongIndex];
+    if (!song) { socket.emit('error', { message: 'Song not found' }); return; }
+    if (song.eliminated) {
+      socket.emit('error', { message: 'Song already eliminated' }); return;
+    }
+
+    // mark eliminated on song object (do NOT remove from array)
     song.eliminated = true;
     song.eliminatedRound = game.currentRound || 1;
     song.eliminatedBy = alias;
     song.comment = comment || '';
 
-    // Ensure playlist has an eliminationLog array
+    // add to playlist's eliminationLog for stable history
     playlist.eliminationLog = playlist.eliminationLog || [];
     playlist.eliminationLog.push({
-      song: { artist: song.artist, title: song.title, link: song.link },
+      songInfo: { artist: song.artist, title: song.title, link: song.link },
       eliminatedRound: song.eliminatedRound,
       eliminatedBy: alias,
-      comment: comment || ''
+      comment: song.comment
     });
 
-    console.log(`Elimination recorded: ${song.title} by ${song.artist}, playlist ${playlistIndex}, round ${song.eliminatedRound}`);
+    // mark that player submitted this round
+    player.hasSubmittedElimination = true;
 
-    // Track round submissions
-    if (!game.roundSubmissions) game.roundSubmissions = {};
-    const roundKey = `r${game.currentRound || 1}`;
-    game.roundSubmissions[roundKey] = game.roundSubmissions[roundKey] || new Set();
-    game.roundSubmissions[roundKey].add(alias);
-
-    // Broadcast the updated playlists so everyone sees the results
+    // broadcast updated playlists and note per-player submit status
     io.to(gameId).emit('playlistsUpdated', game.playlists);
 
-    // Check if everyone submitted for this round
-    const submittedCount = game.roundSubmissions[roundKey].size;
-    const totalPlayers = game.players.length;
+    // broadcast the fact that this player has submitted elimination (so client can show waiting message)
+    io.to(gameId).emit('playerEliminationSubmitted', { alias });
 
-    console.log(`Round ${game.currentRound}: ${submittedCount}/${totalPlayers} eliminations submitted`);
+    // check if all players (in game.players) have submitted this round
+    const allSubmitted = game.players.every(p => !!p.hasSubmittedElimination);
+    console.log(`Round ${game.currentRound}: submission status: ${game.players.map(p => `${p.alias}:${p.hasSubmittedElimination}`).join(', ')}`);
 
-    if (submittedCount === totalPlayers) {
-      console.log(`All eliminations received for round ${game.currentRound}`);
-      advanceGamePhase(game, gameId);
+    if (allSubmitted) {
+      console.log(`All players submitted eliminations for round ${game.currentRound} in game ${gameId}`);
+      // advance to next round OR final mix
+      advanceAfterRound(game, gameId);
     }
   });
 
-  // finalVote
-  socket.on('finalVote', ({ gameId, alias, topTwo }) => {
+  // Votes in final_mix: payload { gameId, alias, chosenPlaylistIndex } or chosenSongId
+  socket.on('submitVote', ({ gameId, alias, chosen }) => {
     const game = games[gameId];
-    if (!game.votes) game.votes = [];
-    game.votes.push({ alias, topTwo });
+    if (!game || game.gamePhase !== 'final_mix') { socket.emit('error', { message: 'Not in final mix' }); return; }
+
+    const player = getOrUpdatePlayer(game, socket, alias, false);
+    if (!player) { socket.emit('error', { message: 'Player not found' }); return; }
+
+    // record vote (chosen must uniquely identify an entry in game.finalMix)
+    game.votes = game.votes || {};
+    game.votes[alias] = chosen;
+
     io.to(gameId).emit('voteSubmitted', { alias });
+
+    // when all players voted -> tally
+    const voteCount = Object.keys(game.votes).length;
+    if (voteCount === game.players.length) {
+      // tally: chosen may be {playlistIndex, songId} or just a song id; allow flexible shape
+      const tally = {}; // key->count
+      for (const v of Object.values(game.votes)) {
+        const key = (typeof v === 'object' && v.playlistIndex !== undefined) ? `pl-${v.playlistIndex}` : String(v);
+        tally[key] = (tally[key] || 0) + 1;
+      }
+
+      // find winner keys with max votes
+      const maxVotes = Math.max(...Object.values(tally));
+      const winners = Object.entries(tally).filter(([k, c]) => c === maxVotes).map(([k]) => k);
+
+      // Build a human-friendly result: map winners to song info
+      const results = winners.map(w => {
+        if (w.startsWith('pl-')) {
+          const idx = parseInt(w.slice(3), 10);
+          const fm = game.finalMix.find(f => f.playlistIndex === idx);
+          return { playlistIndex: idx, originAlias: fm?.originAlias, song: fm?.song, votes: tally[w] };
+        } else {
+          // if key is song id (fallback)
+          const fm = game.finalMix.find(f => f.song && f.song.id === w);
+          return { playlistIndex: fm?.playlistIndex, originAlias: fm?.originAlias, song: fm?.song, votes: tally[w] };
+        }
+      });
+
+      // finalize
+      io.to(gameId).emit('finalResults', { results, tally });
+      console.log(`Final results for game ${gameId}:`, results);
+
+      // optionally set game state to finished
+      game.gamePhase = 'finished';
+    }
   });
 
-  // Clean disconnect handling (optional but recommended)
+  // Disconnect: do not remove player records so they can rejoin
   socket.on('disconnect', () => {
     console.log('Socket disconnected:', socket.id);
-    // we do not remove players from games here to avoid losing game state on accidental reload
+    // (no removal of players; rejoin supported)
   });
-}); // end io.on('connection')
+});
 
-// helper exported / used earlier
-function gamePhaseIsElimination(game) {
-  return game.gamePhase && game.gamePhase.startsWith('elimination');
-}
+/* -----------------------
+   End of file
+   ----------------------- */

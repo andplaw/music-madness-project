@@ -260,7 +260,7 @@ export default function App() {
                     onChange={() => setEliminatedSongIndex(index)}
                   />
                   <span style={{ textDecoration: song.eliminated ? 'line-through' : 'none' }}>
-                    {song.title} by {song.artist}
+                    "{song.title}" by {song.artist}
                   </span>
                 </label>
 
@@ -270,17 +270,17 @@ export default function App() {
                   </div>
                 )}
 
-                {song.eliminated && (
+                {/* {song.eliminated && (
                   <p className="text-sm text-red-600 ml-6">
                     ❌ Eliminated in Round {song.eliminatedRound} by {song.eliminatedBy}: {song.comment}
                   </p>
-                )}
+                )} */}
               </li>
             ))}
           </ul>
 
           <textarea
-            placeholder="Add your commentary to accompany your elimination..."
+            placeholder="Add your snarky commentary to accompany your elimination..."
             value={commentary}
             onChange={(e) => setCommentary(e.target.value)}
             className="input w-full mt-2"
@@ -291,7 +291,7 @@ export default function App() {
             {(playlists[assignedPlaylistIndex].eliminationLog || []).map((log, i) => (
               <div key={i} className="mb-2">
                 <strong>Round {log.eliminatedRound}</strong>: "{log.song.title}" by {log.song.artist} — eliminated by {log.eliminatedBy}
-                <div><em>{log.comment}</em></div>
+                <div>Snark: "<em>{log.comment}</em>"</div>
               </div>
             ))}
           </div>
