@@ -10,6 +10,11 @@ export default function EliminationHistoryViewer({ playlists }) {
   const selectedPlaylist = playlists[selectedPlaylistIndex];
   const eliminationLog = selectedPlaylist.eliminationLog || [];
 
+  const safeLog = eliminationLog?.filter(e => e && e.title);
+  if (!safeLog?.length) {
+    return <p>No elimination history yet.</p>;
+  }
+
   return (
     <div className="elimination-history-container" style={{ marginTop: "1rem" }}>
       <h3>🎧 Elimination History</h3>
@@ -46,8 +51,10 @@ export default function EliminationHistoryViewer({ playlists }) {
             background: "#fff",
           }}
         >
-          {eliminationLog.map((entry, i) => (
-            <li
+          {eliminationLog
+            ?.filter(Boolean) // remove null or undefined entries
+            .map((entry, index) => (
+            <div
               key={i}
               style={{
                 borderBottom: "1px solid #eee",
@@ -71,8 +78,8 @@ export default function EliminationHistoryViewer({ playlists }) {
                 >
                   “{entry.comment}”
                 </p>
-              )}
-            </li>
+              ) || 'No comment'}
+            </div>
           ))}
         </ul>
       )}

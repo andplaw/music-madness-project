@@ -214,6 +214,11 @@ function advanceAfterRound(game, gameId) {
 
     game.finalMix = finalMix;
     game.gamePhase = 'final_mix';
+    game.playlists.forEach((pl) => {
+      if (!Array.isArray(pl.eliminationLog)) {
+        pl.eliminationLog = [];
+      }
+    });
     io.to(gameId).emit('gamePhaseChanged', {
       gamePhase: game.gamePhase,
       playlists: game.playlists,
@@ -227,6 +232,11 @@ function advanceAfterRound(game, gameId) {
   game.currentRound = (game.currentRound || 1) + 1;
   game.gamePhase = `elimination_round_${game.currentRound}`;
   rotateAssignments(game); // will set game.assignedPlaylists
+  game.playlists.forEach((pl) => {
+    if (!Array.isArray(pl.eliminationLog)) {
+      pl.eliminationLog = [];
+    }
+  });
   io.to(gameId).emit('gamePhaseChanged', {
     gamePhase: game.gamePhase,
     assignedPlaylists: game.assignedPlaylists,
