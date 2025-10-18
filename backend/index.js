@@ -66,11 +66,9 @@ function getOrUpdatePlayer(game, socket, alias, createIfMissing = false) {
  * Returns mapping alias -> playlistIndex.
  */
 function assignPlaylistsToPlayers(game) {
-  const assignedPlaylists = {};
   const aliases = game.players.map(p => p.alias);
-  const allPlaylistIndices = game.playlists.map((_, idx) => idx);
+  const total = game.playlists.length;
 
-  // Initialize assignment history if it doesn't exist
   if (!game.assignmentHistory) {
     game.assignmentHistory = {};
     for (const alias of aliases) {
@@ -78,67 +76,106 @@ function assignPlaylistsToPlayers(game) {
     }
   }
 
-  // Shuffle players to randomize assignment order
+  // Keep track of which playlists are already assigned this round
+  const unassigned = [...Array(total).keys()];
+  const assignedPlaylists = {};
+
+  // Shuffle aliases to randomize who picks first
   const shuffledAliases = [...aliases].sort(() => Math.random() - 0.5);
 
   for (const alias of shuffledAliases) {
     const history = game.assignmentHistory[alias] || [];
-    const available = allPlaylistIndices.filter(idx => {
+
+    // Filter available playlists: not own, not yet assigned, not in history (if possible)
+    let candidates = unassigned.filter(idx => {
       const pl = game.playlists[idx];
-      return (
-        pl.alias !== alias && // ✅ never assign own playlist
-        !history.includes(idx) // ✅ never repeat previously reviewed
-      );
+      return pl.alias !== alias && !history.includes(idx);
     });
 
-    let chosenIdx;
-    if (available.length > 0) {
-      chosenIdx = available[Math.floor(Math.random() * available.length)];
-    } else {
-      // Fallback — find any non-self playlist not already assigned this round
-      const fallback = allPlaylistIndices.find(
-        idx => game.playlists[idx].alias !== alias && !Object.values(assignedPlaylists).includes(idx)
-      );
-      chosenIdx = fallback ?? 0; // safe fallback
-      console.warn(`⚠️ No valid new playlist for ${alias}. Using fallback index ${chosenIdx}`);
+    // If all have been seen before, allow reassigning previously reviewed ones
+    if (candidates.length === 0) {
+      candidates = unassigned.filter(idx => game.playlists[idx].alias !== alias);
     }
 
-    assignedPlaylists[alias] = chosenIdx;
+    if (candidates.length === 0) {
+      console.warn(`⚠️ No valid playlist for ${alias}. Assigning randomly (fallback).`);
+      candidates = unassigned;
+    }
+
+    // Pick one randomly from the remaining candidates
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+
+    assignedPlaylists[alias] = chosen;
+
+    // Remove that playlist from pool so no one else gets it this round
+    const removeIndex = unassigned.indexOf(chosen);
+    if (removeIndex !== -1) unassigned.splice(removeIndex, 1);
+
+    // Update history
     if (!game.assignmentHistory[alias]) game.assignmentHistory[alias] = [];
-    game.assignmentHistory[alias].push(chosenIdx);
+    game.assignmentHistory[alias].push(chosen);
   }
 
   game.assignedPlaylists = assignedPlaylists;
+  console.log(`🎯 Assigned playlists (unique per round):`, assignedPlaylists);
+
   return assignedPlaylists;
 }
+
 
 
 /**
  * Rotate assignments for next round (simple rotate but preserve "no own playlist" rule).
  * This function will try to produce assignments where no player gets own playlist.
  */
-function rotateAssignments(game) {
-  if (!game) return;
-  if (!game.currentRound) game.currentRound = 1;
+function rotateAssignments(game, gameId) {
+  const aliases = game.players.map(p => p.alias);
+  const total = game.playlists.length;
 
-  // Increment the round
-  game.currentRound += 1;
-
-  if (game.currentRound > game.maxRounds) {
-    console.log(`🏁 Game ${game.gameCode} has ended!`);
-    game.gamePhase = 'results';
-    return;
+  if (!game.assignmentHistory) {
+    game.assignmentHistory = {};
+    for (const alias of aliases) {
+      game.assignmentHistory[alias] = [];
+    }
   }
 
-  // Reassign playlists (players will never review their own)
-  game.assignedPlaylists = assignPlaylistsToPlayers(game);
+  const unassigned = [...Array(total).keys()];
+  const newAssignments = {};
 
-  // Advance to next phase
-  game.gamePhase = `elimination_round_${game.currentRound}`;
-  console.log(`➡️ Advanced to ${game.gamePhase}`);
+  const shuffledAliases = [...aliases].sort(() => Math.random() - 0.5);
 
-  return game.assignedPlaylists;
+  for (const alias of shuffledAliases) {
+    const history = game.assignmentHistory[alias] || [];
+
+    let candidates = unassigned.filter(idx => {
+      const pl = game.playlists[idx];
+      return pl.alias !== alias && !history.includes(idx);
+    });
+
+    if (candidates.length === 0) {
+      candidates = unassigned.filter(idx => game.playlists[idx].alias !== alias);
+    }
+
+    if (candidates.length === 0) {
+      candidates = unassigned;
+    }
+
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+
+    newAssignments[alias] = chosen;
+    const removeIndex = unassigned.indexOf(chosen);
+    if (removeIndex !== -1) unassigned.splice(removeIndex, 1);
+
+    if (!game.assignmentHistory[alias]) game.assignmentHistory[alias] = [];
+    game.assignmentHistory[alias].push(chosen);
+  }
+
+  game.assignedPlaylists = newAssignments;
+
+  io.to(gameId).emit('assignmentsUpdated', newAssignments);
+  console.log(`🔄 Rotated assignments (unique per round):`, newAssignments);
 }
+
 
 
 /* -----------------------
