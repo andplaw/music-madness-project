@@ -66,53 +66,80 @@ function getOrUpdatePlayer(game, socket, alias, createIfMissing = false) {
  * Returns mapping alias -> playlistIndex.
  */
 function assignPlaylistsToPlayers(game) {
+  const assignedPlaylists = {};
   const aliases = game.players.map(p => p.alias);
-  const total = game.playlists.length;
-  const unassigned = [...Array(total).keys()];
-  if (!game.assignmentHistory) game.assignmentHistory = {};
-  for (const a of aliases) if (!game.assignmentHistory[a]) game.assignmentHistory[a] = [];
+  const allPlaylistIndices = game.playlists.map((_, idx) => idx);
 
-  const assigned = {};
-
-  // iterate players in random order for fairness
-  const order = [...aliases].sort(() => Math.random() - 0.5);
-
-  for (const alias of order) {
-    const history = game.assignmentHistory[alias] || [];
-    // candidate indices: unassigned and not owner's playlist and not in history
-    const candidates = unassigned.filter(idx => {
-      const pl = game.playlists[idx];
-      return pl && pl.alias !== alias && !history.includes(idx);
-    });
-
-    let choice;
-    if (candidates.length === 0) {
-      // fallback: any unassigned that isn't their own
-      const fallback = unassigned.find(idx => game.playlists[idx].alias !== alias);
-      choice = fallback !== undefined ? fallback : unassigned[0];
-    } else {
-      choice = candidates[Math.floor(Math.random() * candidates.length)];
+  // Initialize assignment history if it doesn't exist
+  if (!game.assignmentHistory) {
+    game.assignmentHistory = {};
+    for (const alias of aliases) {
+      game.assignmentHistory[alias] = [];
     }
-
-    assigned[alias] = choice;
-    const removeAt = unassigned.indexOf(choice);
-    if (removeAt !== -1) unassigned.splice(removeAt, 1);
-
-    game.assignmentHistory[alias].push(choice);
   }
 
-  game.assignedPlaylists = assigned;
-  return assigned;
+  // Shuffle players to randomize assignment order
+  const shuffledAliases = [...aliases].sort(() => Math.random() - 0.5);
+
+  for (const alias of shuffledAliases) {
+    const history = game.assignmentHistory[alias] || [];
+    const available = allPlaylistIndices.filter(idx => {
+      const pl = game.playlists[idx];
+      return (
+        pl.alias !== alias && // ✅ never assign own playlist
+        !history.includes(idx) // ✅ never repeat previously reviewed
+      );
+    });
+
+    let chosenIdx;
+    if (available.length > 0) {
+      chosenIdx = available[Math.floor(Math.random() * available.length)];
+    } else {
+      // Fallback — find any non-self playlist not already assigned this round
+      const fallback = allPlaylistIndices.find(
+        idx => game.playlists[idx].alias !== alias && !Object.values(assignedPlaylists).includes(idx)
+      );
+      chosenIdx = fallback ?? 0; // safe fallback
+      console.warn(`⚠️ No valid new playlist for ${alias}. Using fallback index ${chosenIdx}`);
+    }
+
+    assignedPlaylists[alias] = chosenIdx;
+    if (!game.assignmentHistory[alias]) game.assignmentHistory[alias] = [];
+    game.assignmentHistory[alias].push(chosenIdx);
+  }
+
+  game.assignedPlaylists = assignedPlaylists;
+  return assignedPlaylists;
 }
+
 
 /**
  * Rotate assignments for next round (simple rotate but preserve "no own playlist" rule).
  * This function will try to produce assignments where no player gets own playlist.
  */
 function rotateAssignments(game) {
-  // We'll attempt to create new assignments avoiding own playlist and recent history
-  return assignPlaylistsToPlayers(game);
+  if (!game) return;
+  if (!game.currentRound) game.currentRound = 1;
+
+  // Increment the round
+  game.currentRound += 1;
+
+  if (game.currentRound > game.maxRounds) {
+    console.log(`🏁 Game ${game.gameCode} has ended!`);
+    game.gamePhase = 'results';
+    return;
+  }
+
+  // Reassign playlists (players will never review their own)
+  game.assignedPlaylists = assignPlaylistsToPlayers(game);
+
+  // Advance to next phase
+  game.gamePhase = `elimination_round_${game.currentRound}`;
+  console.log(`➡️ Advanced to ${game.gamePhase}`);
+
+  return game.assignedPlaylists;
 }
+
 
 /* -----------------------
    Core game lifecycle helpers
