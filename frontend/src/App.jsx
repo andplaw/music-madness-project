@@ -28,7 +28,13 @@ export default function App() {
   const [eliminatedSongIndex, setEliminatedSongIndex] = useState(null);
   const [commentary, setCommentary] = useState('');
   const [round, setRound] = useState(1);
-
+  const [assignedPlaylist, setAssignedPlaylist] = useState(null); // For rejoin + backend sync
+  const [eliminationHistory, setEliminationHistory] = useState([]); // Shared elimination log
+  const [hasSubmittedElimination, setHasSubmittedElimination] = useState(false); // For waiting state
+  const [finalMix, setFinalMix] = useState([]); // Songs in final mix
+  const [selectedVote, setSelectedVote] = useState(null); // Chosen song in final mix
+  const [voteSubmitted, setVoteSubmitted] = useState(false); // Whether final vote is done
+  const [winningSong, setWinningSong] = useState(null); // Final results winner
 
   // Listen for backend events
   useEffect(() => {
@@ -143,6 +149,7 @@ export default function App() {
     socket.on('voteResults', (results) => {
       setGamePhase('final_results');
       setEliminationHistory(results.eliminationHistory || []);
+      setWinningSong(results.winningSong || null);
     });
 
     // Clean up on unmount
