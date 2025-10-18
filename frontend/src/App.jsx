@@ -40,7 +40,7 @@ export default function App() {
     }
 
     socket.on('gameStateRestored', (gameData) => {
-      setPhase(gameData.phase);
+      setGamePhase(gameData.phase);
       setPlaylists(gameData.playlists);
       setAssignedPlaylist(gameData.assignedPlaylist);
       setEliminationHistory(gameData.eliminationHistory || []);
@@ -138,10 +138,10 @@ export default function App() {
 
     socket.on('finalMixReady', (mix) => {
       setFinalMix(mix);
-      setPhase('final_mix');
+      setGamePhase('final_mix');
     });
     socket.on('voteResults', (results) => {
-      setPhase('final_results');
+      setGamePhase('final_results');
       setEliminationHistory(results.eliminationHistory || []);
     });
 
