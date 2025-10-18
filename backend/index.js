@@ -289,9 +289,12 @@ io.on('connection', socket => {
     socket.join(gameId);
     socket.gameId = gameId;
 
-    // create or relink player
-    const player = getOrUpdatePlayer(game, socket, alias, true);
-
+    // ✅ Create player record
+    const player = { id: socket.id, alias, playlist: null };
+    game.players.push(player);
+    socket.join(gameId);
+    socket.gameCode = gameId;
+    
     // alias conflict check (someone else using alias)
     const conflict = game.players.some(p => p.alias === alias && p.id !== socket.id);
     if (conflict) {
@@ -305,7 +308,9 @@ io.on('connection', socket => {
       gamePhase: game.gamePhase
     });
 
-    console.log(`Player joined game ${gameId}: ${player.alias} (socket ${socket.id})`);
+    console.log(`✅ Player joined game ${gameId}: ${alias}`);
+    console.log(`Current players: ${game.players.map(p => p.alias).join(', ')}`);
+
   });
 
   // Start game (host / first player triggers)
