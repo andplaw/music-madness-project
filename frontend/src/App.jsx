@@ -1,338 +1,402 @@
+
+
 import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 
 const socket = io('https://music-madness-project-backend.onrender.com', {
   transports: ['websocket'],
-  reconnection: true,
 });
 
 export default function App() {
   const [gameId, setGameId] = useState('');
   const [password, setPassword] = useState('');
   const [alias, setAlias] = useState('');
+  const [playlist, setPlaylist] = useState([
+    { artist: '', title: '', link: '' },
+    { artist: '', title: '', link: '' },
+    { artist: '', title: '', link: '' },
+    { artist: '', title: '', link: '' },
+    { artist: '', title: '', link: '' },
+  ]);
   const [joined, setJoined] = useState(false);
-  const [players, setPlayers] = useState([]);
-  const [gamePhase, setGamePhase] = useState('home');
-  const [view, setView] = useState('home');
-  const [playlist, setPlaylist] = useState(
-    Array(5).fill({ artist: '', title: '', link: '' })
-  );
-  const [playlists, setPlaylists] = useState([]);
+  const [players, setPlayerList] = useState([]);
+  const [gamePhase, setGamePhase] = useState('lobby'); // 'joining', 'submitting', 'waiting'
+  const [view, setView] = useState('home'); //can be 'home', 'lobby', 'submit'
+  const [playlistSubmitted, setPlaylistSubmitted] = useState(false);
   const [assignedPlaylistIndex, setAssignedPlaylistIndex] = useState(null);
+  const [playlists, setPlaylists] = useState([]);
   const [eliminatedSongIndex, setEliminatedSongIndex] = useState(null);
   const [commentary, setCommentary] = useState('');
-  const [playlistSubmitted, setPlaylistSubmitted] = useState(false);
   const [round, setRound] = useState(1);
-  const [waitingMessage, setWaitingMessage] = useState('');
-  const [finalMix, setFinalMix] = useState([]);
-  const [votedSongId, setVotedSongId] = useState('');
 
-  // Persist alias + game info so refresh can reconnect
-  useEffect(() => {
-    const saved = localStorage.getItem('session');
-    if (saved) {
-      const { alias, gameId, password } = JSON.parse(saved);
-      setAlias(alias);
-      setGameId(gameId);
-      setPassword(password);
-      socket.emit('rejoinGame', { alias, gameId, password });
-    }
-  }, []);
 
   // Listen for backend events
   useEffect(() => {
+
+    const storedAlias = localStorage.getItem('alias');
+    const storedGame = localStorage.getItem('gameId');
+    if (storedAlias && storedGame) {
+      socket.emit('rejoinGame', { gameId: storedGame, alias: storedAlias });
+    }
+
+    socket.on('gameStateRestored', (gameData) => {
+      setPhase(gameData.phase);
+      setPlaylists(gameData.playlists);
+      setAssignedPlaylist(gameData.assignedPlaylist);
+      setEliminationHistory(gameData.eliminationHistory || []);
+    });
+
+
+    // game created / joined
     socket.on('gameCreated', ({ gameId, players, gamePhase }) => {
+      console.log('Game created:', gameId);
       setJoined(true);
-      setPlayers(players);
+      setPlayerList(players);
       setGamePhase(gamePhase);
-      setView('lobby');
-      localStorage.setItem('session', JSON.stringify({ alias, gameId, password }));
-    });
-
-    socket.on('playerJoined', ({ gamePhase, players }) => {
-      setJoined(true);
-      setPlayers(players);
-      setGamePhase(gamePhase);
+      setGameId(gameId);
       setView('lobby');
     });
 
-    socket.on('gamePhaseChanged', (payload) => {
-      console.log('Phase changed →', payload);
-      const { gamePhase, assignedPlaylists, playlists, round, finalMix } = payload;
+    socket.on('playerJoined', ({ gamePhase, alias: joinedAlias, players }) => {
+      console.log('Player joined:', joinedAlias);
+      setJoined(true);
+      setPlayerList(players);
       setGamePhase(gamePhase);
-      setRound(round || 1);
-      if (playlists) setPlaylists(playlists);
+      setView('lobby');
+    });
 
-      if (finalMix) setFinalMix(finalMix);
+    // Main phase change handler
+    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists: newPlaylists, round: newRound }) => {
+      console.log('Game phase changed to:', gamePhase);
+      setGamePhase(gamePhase);
 
-      if (gamePhase === 'submission') setView('submit');
-      else if (gamePhase.startsWith('elimination')) {
-        let assigned = assignedPlaylists?.[alias];
-        if (assigned === undefined && assignedPlaylists) {
-          const found = Object.entries(assignedPlaylists).find(
-            ([k]) => k.toLowerCase() === alias.toLowerCase()
-          );
-          if (found) assigned = found[1];
+      if (Array.isArray(newPlaylists)) {
+        setPlaylists(newPlaylists);
+      }
+
+      if (typeof newRound === 'number') {
+        setRound(newRound);
+      }
+
+      if (gamePhase === 'submission') {
+        setView('submit');
+      } else if (typeof gamePhase === 'string' && gamePhase.startsWith('elimination')) {
+        // assignedPlaylists is expected to be an object mapping alias -> playlistIndex
+        console.log('Assigned playlists payload:', assignedPlaylists);
+        // Find current player's assignment robustly (case-insensitive fallback)
+        if (assignedPlaylists) {
+          // Direct key match
+          let assigned = assignedPlaylists[alias];
+          if (assigned === undefined) {
+            // Try case-insensitive match
+            const found = Object.entries(assignedPlaylists).find(([key]) => key.toLowerCase() === alias.toLowerCase());
+            if (found) assigned = found[1];
+          }
+          if (assigned !== undefined) {
+            setAssignedPlaylistIndex(assigned);
+            setView('eliminate');
+          } else {
+            console.warn('No assignment found for alias:', alias);
+          }
         }
-        if (assigned !== undefined) setAssignedPlaylistIndex(assigned);
-        setView('eliminate');
-      } else if (gamePhase === 'waiting') setView('waiting');
-      else if (gamePhase === 'voting') setView('voting');
-      else if (gamePhase === 'final_results') setView('results');
-    });
-
-    socket.on('playlistsUpdated', (updated) => {
-      setPlaylists(updated);
-    });
-
-    socket.on('playlistSubmitted', ({ alias: who }) => {
-      if (who === alias) {
-        setPlaylistSubmitted(true);
-        setView('waiting');
+      } else if (gamePhase === 'voting') {
+        setView('voting');
       }
     });
 
-    socket.on('waitingForOthers', ({ phase }) => {
-      setWaitingMessage(`✅ Your ${phase} was submitted. Waiting for other players...`);
-      setView('waiting');
+    // When playlists are updated (after eliminations), update frontend state
+    socket.on('playlistsUpdated', updated => {
+      console.log('playlistsUpdated received', updated);
+      if (Array.isArray(updated)) setPlaylists(updated);
     });
 
-    socket.on('gameResumed', ({ gamePhase, playlists, assignedPlaylists, round }) => {
-      console.log('Resumed game:', gamePhase);
-      setGamePhase(gamePhase);
-      setPlaylists(playlists);
-      setRound(round || 1);
-      if (assignedPlaylists && gamePhase.startsWith('elimination')) {
-        setView('eliminate');
-        let assigned = assignedPlaylists[alias];
-        if (assigned === undefined) {
-          const found = Object.entries(assignedPlaylists).find(
-            ([k]) => k.toLowerCase() === alias.toLowerCase()
-          );
-          if (found) assigned = found[1];
+
+    // assignmentsUpdated is an alternate event; update assignment map if received
+    socket.on('assignmentsUpdated', assigned => {
+      console.log('assignmentsUpdated received', assigned);
+      // If this contains the current player's assignment, update assignedPlaylistIndex
+      if (assigned) {
+        let assignedForMe = assigned[alias];
+        if (assignedForMe === undefined) {
+          const found = Object.entries(assigned).find(([k]) => k.toLowerCase() === alias.toLowerCase());
+          if (found) assignedForMe = found[1];
         }
-        setAssignedPlaylistIndex(assigned);
-      } else setView(gamePhase);
+        if (assignedForMe !== undefined) setAssignedPlaylistIndex(assignedForMe);
+      }
     });
 
-    socket.on('finalMixReady', ({ finalMix }) => {
-      setFinalMix(finalMix);
-      setView('voting');
+    // playlistSubmitted feedback
+    socket.on('playlistSubmitted', ({ alias: submittedAlias }) => {
+      console.log(`Playlist submitted by ${submittedAlias}`);
+      
+      // Only set *this* player to waiting if it was them who submitted
+      if (submittedAlias === alias) {
+        setGamePhase('waiting');
+        setPlaylistSubmitted(true);
+      }
     });
 
+    socket.on('finalMixReady', (mix) => {
+      setFinalMix(mix);
+      setPhase('final_mix');
+    });
+    socket.on('voteResults', (results) => {
+      setPhase('final_results');
+      setEliminationHistory(results.eliminationHistory || []);
+    });
+
+    // Clean up on unmount
     return () => {
+      socket.off('gameStateRestored');
       socket.off('gameCreated');
       socket.off('playerJoined');
       socket.off('gamePhaseChanged');
       socket.off('playlistsUpdated');
+      socket.off('assignmentsUpdated');
       socket.off('playlistSubmitted');
-      socket.off('waitingForOthers');
-      socket.off('gameResumed');
       socket.off('finalMixReady');
+      socket.off('voteResults');
     };
-  }, [alias]);
+  }, [alias]); // keep alias in deps so handlers see the latest alias
+
+
+
 
   const handleCreateGame = () => {
+    if (!gameId || !password) return;
     socket.emit('createGame', { gameId, password, alias });
+    console.log('Creating game with:', gameId, password, alias);
   };
 
   const handleJoinGame = () => {
-    socket.emit('joinGame', { gameId, password, alias });
-    localStorage.setItem('session', JSON.stringify({ alias, gameId, password }));
+    if (!gameId || !password || !alias) return;
+    socket.emit('joinGame', { gameId, alias, password });
+    localStorage.setItem('alias', alias);
+    localStorage.setItem('gameId', gameId);
   };
 
   const handleSubmitPlaylist = () => {
-    const invalid = playlist.some(s => !s.title.trim() || !s.artist.trim());
+    const invalid = playlist.some(song =>
+      !song || !song.title || !song.artist || song.title.trim() === '' || song.artist.trim() === ''
+    );
     if (invalid) {
-      alert('Each song must include artist and title.');
+      alert('Each song must include an artist and title (link optional).');
       return;
     }
+
+    // send as-is; backend will normalize ids and shape
+    console.log('Submitting playlist', { gameId, alias, playlist });
     socket.emit('submitPlaylist', { gameId, alias, playlist });
     setPlaylistSubmitted(true);
   };
 
-  const handleSubmitElimination = () => {
-    if (eliminatedSongIndex === null || !commentary.trim()) return;
-    socket.emit('submitElimination', {
-      gameId,
-      alias,
-      playlistIndex: assignedPlaylistIndex,
-      eliminatedSongIndex,
-      comment: commentary,
-    });
-    setEliminatedSongIndex(null);
-    setCommentary('');
-    setWaitingMessage('✅ Elimination submitted. Waiting for other players...');
-    setView('waiting');
-  };
-
-  const handleVote = () => {
-    if (!votedSongId) return;
-    socket.emit('submitVote', { gameId, alias, songId: votedSongId });
-    setWaitingMessage('🎵 Vote submitted! Waiting for results...');
-    setView('waiting');
+  const submitElimination = (songId, comment) => {
+    socket.emit('submitElimination', { gameId, alias, songId, comment });
+    setHasSubmittedElimination(true);
   };
 
   return (
-    <div className="p-4 max-w-xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Playlist Elimination Game</h1>
+    <div className="p-4 max-w-xl mx-auto space-y-4">
+      <h1 className="text-2xl font-bold">Playlist Elimination Game</h1>
 
       {view === 'home' && (
-        <div className="space-y-2">
-          <input placeholder="Game ID" value={gameId} onChange={e => setGameId(e.target.value)} />
-          <input placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} type="password" />
-          <input placeholder="Alias" value={alias} onChange={e => setAlias(e.target.value)} />
-          <button onClick={handleCreateGame}>Create Game</button>
-          <button onClick={handleJoinGame}>Join Game</button>
-        </div>
+        <>
+          <input value={gameId} onChange={e => setGameId(e.target.value)} placeholder="Game ID" className="input" />
+          <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="input" type="password" />
+          <input value={alias} onChange={e => setAlias(e.target.value)} placeholder="Your Alias" className="input" />
+          <button onClick={handleCreateGame} className="btn">Create Game</button>
+          <button onClick={handleJoinGame} className="btn">Join Game</button>
+          <p>Phase: {gamePhase} | View: {view}</p>
+        </>
       )}
 
       {view === 'lobby' && (
-        <div>
-          <h2 className="text-lg font-semibold">Lobby — Game: {gameId}</h2>
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Waiting in Lobby (Game ID: {gameId})</h2>
           <ul className="list-disc list-inside">
-            {players.map((p, i) => <li key={i}>{p}</li>)}
+            {players.map((player, idx) => <li key={idx}>{player || <em>(unnamed)</em>}</li>)}
           </ul>
           {alias === players[0] && (
-            <button onClick={() => socket.emit('startGame', { gameId })}>Start Game</button>
+            <button
+              className="btn mt-2"
+              onClick={() => {
+                console.log('Start Game clicked');
+                socket.emit('startGame', { gameId });
+              }}
+            >
+              Start Game
+            </button>
           )}
+          <p>Phase: {gamePhase} | View: {view}</p>
         </div>
       )}
 
-      {view === 'submit' && !playlistSubmitted && (
+      {view === 'submit' && 
+      (!playlistSubmitted ? (
         <div>
-          <h2 className="font-semibold mb-2">Submit Your Playlist</h2>
-          {playlist.map((s, i) => (
-            <div key={i} className="border p-2 mb-2 rounded">
+          <h2 className="font-semibold">Your Playlist</h2>
+          <p>Phase: {gamePhase} | View: {view}</p>
+          {playlist.map((song, idx) => (
+            <div key={idx} className="border p-2 mb-2 rounded">
               <input
+                value={song.artist}
+                onChange={e => {
+                  const updated = [...playlist];
+                  updated[idx].artist = e.target.value;
+                  setPlaylist(updated);
+                }}
                 placeholder="Artist"
-                value={s.artist}
-                onChange={e => {
-                  const updated = [...playlist];
-                  updated[i].artist = e.target.value;
-                  setPlaylist(updated);
-                }}
+                className="input mb-1"
               />
               <input
-                placeholder="Title"
-                value={s.title}
+                value={song.title}
                 onChange={e => {
                   const updated = [...playlist];
-                  updated[i].title = e.target.value;
+                  updated[idx].title = e.target.value;
                   setPlaylist(updated);
                 }}
+                placeholder="Song Title"
+                className="input mb-1"
               />
               <input
-                placeholder="Link (optional)"
-                value={s.link}
+                value={song.link}
                 onChange={e => {
                   const updated = [...playlist];
-                  updated[i].link = e.target.value;
+                  updated[idx].link = e.target.value;
                   setPlaylist(updated);
                 }}
+                placeholder="Link (YouTube, Spotify, etc.)"
+                className="input"
               />
             </div>
           ))}
-          <button onClick={handleSubmitPlaylist}>Submit Playlist</button>
+          <button onClick={handleSubmitPlaylist} className="btn mt-2">Submit Playlist</button>
         </div>
-      )}
+      ) : (
+        <p className="text-green-700">🎶 Playlist submitted! Waiting for others...</p>
+      ))}
 
-      {view === 'waiting' && (
-        <p className="text-green-700 font-medium mt-4">{waitingMessage || 'Waiting for other players...'}</p>
-      )}
-
-      {view === 'eliminate' && assignedPlaylistIndex !== null && (
+      {view === 'eliminate' && assignedPlaylistIndex !== null && playlists[assignedPlaylistIndex] && (
         <div>
-          <h2 className="font-semibold mb-2">Round {round}: Eliminate a Song</h2>
-          <h3 className="mb-2">
-            Reviewing Playlist of {playlists[assignedPlaylistIndex]?.alias}
-          </h3>
+          <h2 className="font-semibold">Round {round}: Eliminate a Song</h2>
+
+          <h3 className="mt-4 font-semibold">Assigned Playlist ({playlists[assignedPlaylistIndex].alias})</h3>
           <ul>
-            {playlists[assignedPlaylistIndex]?.songs.map((song, idx) => (
-              <li key={idx}>
-                <label>
+            {playlists[assignedPlaylistIndex].songs.map((song, index) => (
+              <li key={song.id || index} className="mb-2 border-b pb-1">
+                <label style={{display:'flex', alignItems:'center', gap:8}}>
                   <input
                     type="radio"
-                    name="elim"
-                    checked={eliminatedSongIndex === idx}
-                    disabled={song.eliminated}
-                    onChange={() => setEliminatedSongIndex(idx)}
+                    name="eliminatedSong"
+                    value={index}
+                    checked={eliminatedSongIndex === index}
+                    disabled={!!song.eliminated}
+                    onChange={() => setEliminatedSongIndex(index)}
                   />
-                  <span className={song.eliminated ? 'line-through text-gray-500' : ''}>
-                    {song.title} — {song.artist}
+                  <span style={{ textDecoration: song.eliminated ? 'line-through' : 'none' }}>
+                    "{song.title}" by {song.artist}
                   </span>
                 </label>
-              </li>
-            ))}
-          </ul>
-          <textarea
-            placeholder="Commentary..."
-            value={commentary}
-            onChange={e => setCommentary(e.target.value)}
-            className="block w-full border mt-2"
-          />
-          <button className="mt-2" onClick={handleSubmitElimination}>Submit Elimination</button>
 
-          <div className="mt-4">
-            <h3 className="font-semibold">Elimination History (All Playlists)</h3>
-            {playlists.map((p, i) => (
-              <div key={i} className="border p-2 mt-2 rounded bg-gray-50">
-                <h4>{p.alias}'s Playlist</h4>
-                {(p.eliminationLog || []).map((log, j) => (
-                  <div key={j} className="text-sm">
-                    ❌ Round {log.eliminatedRound}: "{log.song.title}" by {log.song.artist} — {log.eliminatedBy}
-                    <br />
-                    <em>"{log.comment}"</em>
+                {song.link && (
+                  <div className="ml-6">
+                    <a href={song.link} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Listen</a>
                   </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+                )}
 
-      {view === 'voting' && (
-        <div>
-          <h2 className="font-semibold mb-2">🎵 Final Mix — Vote for Your Favorite</h2>
-          <ul>
-            {finalMix.map((song, idx) => (
-              <li key={idx}>
-                <label>
-                  <input
-                    type="radio"
-                    name="vote"
-                    value={song.id}
-                    checked={votedSongId === song.id}
-                    onChange={() => setVotedSongId(song.id)}
-                  />
-                  "{song.title}" — {song.artist} ({song.alias})
-                </label>
+                {/* {song.eliminated && (
+                  <p className="text-sm text-red-600 ml-6">
+                    ❌ Eliminated in Round {song.eliminatedRound} by {song.eliminatedBy}: {song.comment}
+                  </p>
+                )} */}
               </li>
             ))}
           </ul>
-          <button onClick={handleVote} disabled={!votedSongId} className="mt-2">
-            Submit Vote
+
+          <textarea
+            placeholder="Add your snarky commentary to accompany your elimination..."
+            value={commentary}
+            onChange={(e) => setCommentary(e.target.value)}
+            className="input w-full mt-2"
+          />
+
+          <h3 className="mt-4 font-semibold">Elimination History</h3>
+          {playlists.map((p, i) => (
+            <div key={i} className="text-sm bg-gray-100 p-2 rounded">
+              {(p.eliminationLog || []).map((log, i) => (
+                <div key={i} className="mb-2">
+                  <strong>Round {log.eliminatedRound}</strong>: "{log.song.title}" by {log.song.artist} — eliminated by {log.eliminatedBy}
+                  <div>Snark: "<em>{log.comment}</em>"</div>
+                </div>
+              ))}
+            </div>
+          ))}
+
+          <button
+            className="btn mt-2"
+            disabled={eliminatedSongIndex === null || commentary.trim() === ''}
+            onClick={() => {
+              socket.emit('submitElimination', {
+                gameId,
+                alias,
+                playlistIndex: assignedPlaylistIndex,
+                eliminatedSongIndex,
+                comment: commentary,
+              });
+
+              setEliminatedSongIndex(null);
+              setCommentary('');
+              setView('waiting');
+            }}
+          >
+            Submit Elimination
           </button>
         </div>
       )}
 
-      {view === 'results' && (
+
+      {gamePhase === 'final_mix' && (
         <div>
-          <h2 className="text-xl font-bold">🏆 Final Results</h2>
-          {playlists.map((p, i) => (
-            <div key={i} className="border p-2 mt-2 rounded">
-              <h3>{p.alias}'s Playlist</h3>
-              <ul>
-                {p.songs.map((s, j) => (
-                  <li key={j}>
-                    {s.title} — {s.artist} {s.winner && '🥇'}
-                  </li>
-                ))}
-              </ul>
+          <h2>🎧 Final Mix — Vote for Your Favorite Song!</h2>
+          {finalMix.map((song) => (
+            <div key={song.id}>
+              <input
+                type="radio"
+                name="finalVote"
+                value={song.id}
+                onChange={() => setSelectedVote(song.id)}
+              />
+              {song.artist} - {song.title} ({song.link && <a href={song.link} target="_blank">link</a>})
+            </div>
+          ))}
+          <button onClick={() => {
+            socket.emit('submitVote', { gameId, alias, songId: selectedVote });
+            setVoteSubmitted(true);
+          }}>Submit Vote</button>
+
+          <h3>Full Elimination History</h3>
+          {eliminationHistory.map((entry, idx) => (
+            <div key={idx}>
+              <strong>{entry.alias}</strong> eliminated "{entry.songTitle}" from {entry.playlistAlias}'s playlist — Round {entry.round} — {entry.comment}
             </div>
           ))}
         </div>
       )}
+
+      {gamePhase === 'final_results' && (
+        <div className="text-center">
+          <h2>🏆 The Winner Is...</h2>
+          <h3>{winningSong?.artist} - {winningSong?.title}</h3>
+          <h4>🎉 Congratulations!</h4>
+          <h3>Full Elimination History</h3>
+          {eliminationHistory.map((entry, idx) => (
+            <div key={idx}>
+              <strong>{entry.alias}</strong> eliminated "{entry.songTitle}" from {entry.playlistAlias}'s playlist — Round {entry.round} — {entry.comment}
+            </div>
+          ))}
+        </div>
+      )}
+
     </div>
   );
 }
