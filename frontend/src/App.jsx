@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
+import EliminationHistoryViewer from "./components/EliminationHistoryViewer";
 
 const socket = io('https://music-madness-project-backend.onrender.com', {
   transports: ['websocket'],
@@ -328,7 +329,9 @@ export default function App() {
           />
 
           <h3 className="mt-4 font-semibold">Elimination History</h3>
-          {playlists.map((p, i) => (
+          <EliminationHistoryViewer playlists={playlists} />
+
+          {/* {playlists.map((p, i) => (
             <div key={i} className="text-sm bg-gray-100 p-2 rounded">
               {(p.eliminationLog || []).map((log, i) => (
                 <div key={i} className="mb-2">
@@ -337,7 +340,7 @@ export default function App() {
                 </div>
               ))}
             </div>
-          ))}
+          ))} */}
 
           <button
             className="btn mt-2"
