@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 
-const socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001');
+const socket = io('https://music-madness-project-backend.onrender.com', {
+  transports: ['websocket'],
+});
 
 export default function App() {
   const [alias, setAlias] = useState('');
