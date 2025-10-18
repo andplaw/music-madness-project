@@ -214,10 +214,15 @@ function advanceAfterRound(game, gameId) {
 
     game.finalMix = finalMix;
     game.gamePhase = 'final_mix';
-    game.playlists.forEach((pl) => {
-      if (!Array.isArray(pl.eliminationLog)) {
-        pl.eliminationLog = [];
-      }
+    game.playlists.forEach(pl => {
+      if (!Array.isArray(pl.eliminationLog)) pl.eliminationLog = [];
+      pl.eliminationLog = pl.eliminationLog.map(e => {
+        // ensure shape
+        if (!e) return null;
+        if (e.songInfo) return e;
+        if (e.song && typeof e.song === 'object') return { songInfo: e.song, eliminatedRound: e.eliminatedRound, eliminatedBy: e.eliminatedBy, comment: e.comment };
+        return null;
+      }).filter(Boolean);
     });
     io.to(gameId).emit('gamePhaseChanged', {
       gamePhase: game.gamePhase,
@@ -232,10 +237,15 @@ function advanceAfterRound(game, gameId) {
   game.currentRound = (game.currentRound || 1) + 1;
   game.gamePhase = `elimination_round_${game.currentRound}`;
   rotateAssignments(game); // will set game.assignedPlaylists
-  game.playlists.forEach((pl) => {
-    if (!Array.isArray(pl.eliminationLog)) {
-      pl.eliminationLog = [];
-    }
+  game.playlists.forEach(pl => {
+    if (!Array.isArray(pl.eliminationLog)) pl.eliminationLog = [];
+    pl.eliminationLog = pl.eliminationLog.map(e => {
+      // ensure shape
+      if (!e) return null;
+      if (e.songInfo) return e;
+      if (e.song && typeof e.song === 'object') return { songInfo: e.song, eliminatedRound: e.eliminatedRound, eliminatedBy: e.eliminatedBy, comment: e.comment };
+      return null;
+    }).filter(Boolean);
   });
   io.to(gameId).emit('gamePhaseChanged', {
     gamePhase: game.gamePhase,
