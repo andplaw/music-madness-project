@@ -73,12 +73,17 @@ export default function App() {
     });
 
     // Main phase change handler
-    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists: newPlaylists, round: newRound }) => {
+    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists: newPlaylists, round: newRound, finalMix }) => {
       console.log('Game phase changed to:', gamePhase);
       setGamePhase(gamePhase);
 
+      
       if (Array.isArray(newPlaylists)) {
         setPlaylists(newPlaylists);
+      }
+
+      if (Array.isArray(finalMix)) {
+        setFinalMix(finalMix);
       }
 
       if (typeof newRound === 'number') {
@@ -147,6 +152,7 @@ export default function App() {
       setFinalMix(mix);
       setGamePhase('final_mix');
     });
+    
     socket.on('voteResults', (results) => {
       setGamePhase('final_results');
       setEliminationHistory(results.eliminationHistory || []);
@@ -377,6 +383,8 @@ export default function App() {
                 onChange={() => setSelectedVote(song.id)}
               />
               {song.artist} - {song.title} ({song.link && <a href={song.link} target="_blank">link</a>})
+              <br/>
+              <small>Originally from {entry.originAlias}’s playlist</small>
             </div>
           ))}
           <button onClick={() => {
@@ -385,11 +393,7 @@ export default function App() {
           }}>Submit Vote</button>
 
           <h3>Full Elimination History</h3>
-          {eliminationHistory.map((entry, idx) => (
-            <div key={idx}>
-              <strong>{entry.alias}</strong> eliminated "{entry.songTitle}" from {entry.playlistAlias}'s playlist — Round {entry.round} — {entry.comment}
-            </div>
-          ))}
+          <EliminationHistoryViewer playlists={playlists} />
         </div>
       )}
 
@@ -399,11 +403,7 @@ export default function App() {
           <h3>{winningSong?.artist} - {winningSong?.title}</h3>
           <h4>🎉 Congratulations!</h4>
           <h3>Full Elimination History</h3>
-          {eliminationHistory.map((entry, idx) => (
-            <div key={idx}>
-              <strong>{entry.alias}</strong> eliminated "{entry.songTitle}" from {entry.playlistAlias}'s playlist — Round {entry.round} — {entry.comment}
-            </div>
-          ))}
+          <EliminationHistoryViewer playlists={playlists} />
         </div>
       )}
 
