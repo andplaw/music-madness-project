@@ -192,20 +192,31 @@ function allPlaylistsHaveOneRemaining(game) {
   return game.playlists.every(pl => (pl.songs.filter(s => !s.eliminated).length === 1));
 }
 
-/**
- * Advance the game after a round completes.
- * If final condition reached -> produce final mix and go to final_mix
- * Else rotate assignments and move to next elimination round.
- */
 function advanceAfterRound(game, gameId) {
-  // Reset per-round hasSubmittedElimination flags
+  if (!game) {
+    console.error(`advanceAfterRound called with missing game ${gameId}`);
+    return;
+  }
+
+  // 🔒 Prevent overlapping transitions
+  if (game._advancing) {
+    console.warn(`advanceAfterRound called while game ${gameId} is already advancing.`);
+    return;
+  }
+  game._advancing = true;
+
+  // Reset per-round submission flags safely
   game.players.forEach(p => p.hasSubmittedElimination = false);
-  // If final condition (each playlist now has 1 active song) -> final mix & voting
-  if (allPlaylistsHaveOneRemaining(game) || (game.currentRound && game.currentRound >= (game.maxRounds || computeMaxRounds(game)))) {
-    // Build final mix: collect the single remaining song from each playlist
+
+  // 🔍 Determine if we're entering the final mix
+  const isFinalPhase =
+    allPlaylistsHaveOneRemaining(game) ||
+    (game.currentRound && game.currentRound >= (game.maxRounds || computeMaxRounds(game)));
+
+  if (isFinalPhase) {
+    // ✅ Build final mix: collect the last remaining song from each playlist
     const finalMix = game.playlists.map((pl, idx) => {
-      const remaining = pl.songs.find(s => !s.eliminated)
-                    || pl.songs[pl.songs.length-1];
+      const remaining = pl.songs.find(s => !s.eliminated) || pl.songs[pl.songs.length - 1];
 
       // Defensive guards
       const safeSong = remaining ? {
@@ -213,64 +224,118 @@ function advanceAfterRound(game, gameId) {
         artist: remaining.artist || 'Unknown Artist',
         title: remaining.title || 'Untitled Song',
         link: remaining.link || '',
-        eliminated: remaining.eliminated || false,
-        eliminatedRound: remaining.eliminatedRound || null,
-        eliminatedBy: remaining.eliminatedBy || null,
-        comment: remaining.comment || ''
+        eliminated: !!remaining.eliminated,
+        eliminatedRound: remaining.eliminatedRound ?? null,
+        eliminatedBy: remaining.eliminatedBy ?? null,
+        comment: remaining.comment ?? ''
       } : null;
 
       return {
         playlistIndex: idx,
-        originAlias: String(pl.alias),
-        song: safeSong || null
+        originAlias: pl.alias || `Player_${idx + 1}`, // 🧩 FIX: keep alias, not number
+        song: safeSong
       };
-    }).filter(entry => entry.song !== null);
+    }).filter(entry => entry.song);
 
     game.finalMix = finalMix;
     game.gamePhase = 'final_mix';
 
+    // Normalize elimination logs for all playlists
     game.playlists.forEach(pl => {
       if (!Array.isArray(pl.eliminationLog)) pl.eliminationLog = [];
-      pl.eliminationLog = pl.eliminationLog.map(e => {
-        // ensure shape
-        if (!e) return null;
-        if (e.songInfo) return e;
-        if (e.song && typeof e.song === 'object') return { songInfo: e.song, eliminatedRound: e.eliminatedRound, eliminatedBy: e.eliminatedBy, comment: e.comment };
-        return null;
-      }).filter(Boolean);
+      pl.eliminationLog = pl.eliminationLog
+        .map(e => {
+          if (!e) return null;
+          if (e.songInfo) return e;
+          if (e.song && typeof e.song === 'object')
+            return {
+              songInfo: e.song,
+              eliminatedRound: e.eliminatedRound,
+              eliminatedBy: e.eliminatedBy,
+              comment: e.comment
+            };
+          return null;
+        })
+        .filter(Boolean);
     });
 
-    io.to(gameId).emit('gamePhaseChanged', {
-      gamePhase: game.gamePhase,
-      playlists: game.playlists,
-      finalMix: game.finalMix
-    });
-    console.log(`Game ${gameId} moved to final_mix with ${finalMix.length} songs.`);
+    // Defensive: ensure finalMix exists and is valid before emitting
+    if (!Array.isArray(game.finalMix) || game.finalMix.length === 0) {
+      console.warn(`⚠️ Game ${gameId}: finalMix is empty or invalid — rebuilding before emit.`);
+      game.finalMix = game.playlists.map((pl, idx) => {
+        const remaining = pl.songs.find(s => !s.eliminated)
+                      || pl.songs[pl.songs.length - 1];
+
+        if (!remaining) return null;
+
+        return {
+          playlistIndex: idx,
+          originAlias: String(pl.alias),
+          song: {
+            id: remaining.id || `song_${idx}`,
+            artist: remaining.artist || 'Unknown Artist',
+            title: remaining.title || 'Untitled Song',
+            link: remaining.link || '',
+            eliminated: !!remaining.eliminated,
+            eliminatedRound: remaining.eliminatedRound || null,
+            eliminatedBy: remaining.eliminatedBy || null,
+            comment: remaining.comment || ''
+          }
+        };
+      }).filter(Boolean);
+    }
+
+    // 🕐 Slight delay to ensure clients handle last elimination renders before final phase
+    setTimeout(() => {
+      io.to(gameId).emit('gamePhaseChanged', {
+        gamePhase: game.gamePhase,
+        playlists: game.playlists,
+        finalMix: game.finalMix
+      });
+      console.log(`✅ Game ${gameId} moved to final_mix with ${finalMix.length} songs.`);
+      game._advancing = false;
+    }, 500);
+
     return;
   }
 
-  // Otherwise advance to next elimination round
+  // 🔁 Otherwise, move to next elimination round
   game.currentRound = (game.currentRound || 1) + 1;
   game.gamePhase = `elimination_round_${game.currentRound}`;
-  rotateAssignments(game); // will set game.assignedPlaylists
+
+  // Recompute playlist assignments safely
+  rotateAssignments(game);
   game.playlists.forEach(pl => {
     if (!Array.isArray(pl.eliminationLog)) pl.eliminationLog = [];
-    pl.eliminationLog = pl.eliminationLog.map(e => {
-      // ensure shape
-      if (!e) return null;
-      if (e.songInfo) return e;
-      if (e.song && typeof e.song === 'object') return { songInfo: e.song, eliminatedRound: e.eliminatedRound, eliminatedBy: e.eliminatedBy, comment: e.comment };
-      return null;
-    }).filter(Boolean);
+    pl.eliminationLog = pl.eliminationLog
+      .map(e => {
+        if (!e) return null;
+        if (e.songInfo) return e;
+        if (e.song && typeof e.song === 'object')
+          return {
+            songInfo: e.song,
+            eliminatedRound: e.eliminatedRound,
+            eliminatedBy: e.eliminatedBy,
+            comment: e.comment
+          };
+        return null;
+      })
+      .filter(Boolean);
   });
-  io.to(gameId).emit('gamePhaseChanged', {
-    gamePhase: game.gamePhase,
-    assignedPlaylists: game.assignedPlaylists,
-    playlists: game.playlists,
-    round: game.currentRound
-  });
-  console.log(`Advanced ${gameId} to ${game.gamePhase}`);
+
+  // Slight buffer to prevent phase-race conditions
+  setTimeout(() => {
+    io.to(gameId).emit('gamePhaseChanged', {
+      gamePhase: game.gamePhase,
+      assignedPlaylists: game.assignedPlaylists,
+      playlists: game.playlists,
+      round: game.currentRound
+    });
+    console.log(`➡️ Advanced ${gameId} to ${game.gamePhase}`);
+    game._advancing = false;
+  }, 300);
 }
+
 
 /* -----------------------
    Socket.IO handlers
@@ -450,76 +515,98 @@ io.on('connection', socket => {
   });
 
   // Submit elimination: player eliminates one song from an assigned playlist
-  socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIndex, comment }) => {
-    const game = games[gameId];
-    if (!game) { socket.emit('error', { message: 'Game not found' }); return; }
-    if (!game.gamePhase || !game.gamePhase.startsWith('elimination')) {
-      socket.emit('error', { message: 'Not in elimination phase' }); return;
-    }
+socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIndex, comment }) => {
+  const game = games[gameId];
+  if (!game) { socket.emit('error', { message: 'Game not found' }); return; }
+  if (!game.gamePhase || !game.gamePhase.startsWith('elimination')) {
+    socket.emit('error', { message: 'Not in elimination phase' }); return;
+  }
 
-    // validate player
-    const player = getOrUpdatePlayer(game, socket, alias, false);
-    if (!player) { socket.emit('error', { message: 'Player not recognized' }); return; }
+  // validate player
+  const player = getOrUpdatePlayer(game, socket, alias, false);
+  if (!player) { socket.emit('error', { message: 'Player not recognized' }); return; }
 
-    // ensure player is assigned to that playlist
-    const assignedIndex = game.assignedPlaylists?.[alias];
-    if (assignedIndex === undefined || assignedIndex !== playlistIndex) {
-      socket.emit('error', { message: 'You are not assigned to that playlist' }); return;
-    }
+  // ensure player is assigned to that playlist
+  const assignedIndex = game.assignedPlaylists?.[alias];
+  if (assignedIndex === undefined || assignedIndex !== playlistIndex) {
+    socket.emit('error', { message: 'You are not assigned to that playlist' }); return;
+  }
 
-    const playlist = game.playlists[playlistIndex];
-    if (!playlist) { socket.emit('error', { message: 'Playlist not found' }); return; }
+  const playlist = game.playlists[playlistIndex];
+  if (!playlist) { socket.emit('error', { message: 'Playlist not found' }); return; }
 
-    // Protect: player should never be allowed to eliminate from their own playlist (server-side check)
-    if (playlist.alias === alias) {
-      socket.emit('error', { message: 'Cannot eliminate from your own playlist' }); return;
-    }
+  // Protect: player should never be allowed to eliminate from their own playlist (server-side check)
+  if (playlist.alias === alias) {
+    socket.emit('error', { message: 'Cannot eliminate from your own playlist' }); return;
+  }
 
-    // validate song index
-    if (!Number.isInteger(eliminatedSongIndex) || eliminatedSongIndex < 0 || eliminatedSongIndex >= playlist.songs.length) {
-      socket.emit('error', { message: 'Invalid song index' }); return;
-    }
+  // validate song index
+  if (!Number.isInteger(eliminatedSongIndex) || eliminatedSongIndex < 0 || eliminatedSongIndex >= playlist.songs.length) {
+    socket.emit('error', { message: 'Invalid song index' }); return;
+  }
 
-    const song = playlist.songs[eliminatedSongIndex];
-    if (!song) { socket.emit('error', { message: 'Song not found' }); return; }
-    if (song.eliminated) {
-      socket.emit('error', { message: 'Song already eliminated' }); return;
-    }
+  const song = playlist.songs[eliminatedSongIndex];
+  if (!song) { socket.emit('error', { message: 'Song not found' }); return; }
+  if (song.eliminated) {
+    socket.emit('error', { message: 'Song already eliminated' }); return;
+  }
 
-    // mark eliminated on song object (do NOT remove from array)
-    song.eliminated = true;
-    song.eliminatedRound = game.currentRound || 1;
-    song.eliminatedBy = alias;
-    song.comment = comment || '';
+  // mark eliminated on song object (do NOT remove from array)
+  song.eliminated = true;
+  song.eliminatedRound = game.currentRound || 1;
+  song.eliminatedBy = alias;
+  song.comment = comment || '';
 
-    // add to playlist's eliminationLog for stable history
-    playlist.eliminationLog = playlist.eliminationLog || [];
-    playlist.eliminationLog.push({
-      songInfo: { artist: song.artist, title: song.title, link: song.link },
-      eliminatedRound: song.eliminatedRound,
-      eliminatedBy: alias,
-      comment: song.comment
-    });
-
-    // mark that player submitted this round
-    player.hasSubmittedElimination = true;
-
-    // broadcast updated playlists and note per-player submit status
-    io.to(gameId).emit('playlistsUpdated', game.playlists);
-
-    // broadcast the fact that this player has submitted elimination (so client can show waiting message)
-    io.to(gameId).emit('playerEliminationSubmitted', { alias });
-
-    // check if all players (in game.players) have submitted this round
-    const allSubmitted = game.players.every(p => !!p.hasSubmittedElimination);
-    console.log(`Round ${game.currentRound}: submission status: ${game.players.map(p => `${p.alias}:${p.hasSubmittedElimination}`).join(', ')}`);
-
-    if (allSubmitted) {
-      console.log(`All players submitted eliminations for round ${game.currentRound} in game ${gameId}`);
-      // advance to next round OR final mix
-      advanceAfterRound(game, gameId);
-    }
+  // add to playlist's eliminationLog for stable history
+  playlist.eliminationLog = playlist.eliminationLog || [];
+  playlist.eliminationLog.push({
+    songInfo: { artist: song.artist, title: song.title, link: song.link },
+    eliminatedRound: song.eliminatedRound,
+    eliminatedBy: alias,
+    comment: song.comment
   });
+
+  // mark that player submitted this round
+  player.hasSubmittedElimination = true;
+  console.log(`Elimination received from ${alias} (socket=${socket.id})`);
+
+  // broadcast updated playlists and note per-player submit status
+  io.to(gameId).emit('playlistsUpdated', game.playlists);
+  io.to(gameId).emit('playerEliminationSubmitted', { alias });
+  console.log(`${alias} marked as submitted`);
+  console.log('Submitted eliminations so far:', game.players.map(p => `${p.alias}:${p.hasSubmittedElimination}`));
+
+  // check if all players have submitted this round
+  const allSubmitted = game.players.every(p => !!p.hasSubmittedElimination);
+  console.log(`Round ${game.currentRound}: submission status: ${game.players.map(p => `${p.alias}:${p.hasSubmittedElimination}`).join(', ')}`);
+
+  if (allSubmitted) {
+    console.log(`✅ All players submitted eliminations for round ${game.currentRound} in game ${gameId}`);
+
+    // 🔒 Lock phase to prevent duplicate advances
+    if (game._roundLocked) {
+      console.warn(`Round ${game.currentRound} already locked for game ${gameId}, skipping duplicate advance.`);
+      return;
+    }
+    game._roundLocked = true;
+
+    // 🕐 Small delay gives final player's client time to render their "submission success" state
+    setTimeout(() => {
+      try {
+        // Ensure game still exists and hasn't advanced already
+        const stillSameGame = games[gameId] && games[gameId].currentRound === game.currentRound;
+        if (stillSameGame) {
+          advanceAfterRound(game, gameId);
+        } else {
+          console.warn(`Skipping advanceAfterRound for ${gameId} — game state already advanced.`);
+        }
+      } catch (err) {
+        console.error(`Error during advanceAfterRound for ${gameId}:`, err);
+      }
+    }, 500); // 0.5s delay — tweak if needed
+  }
+});
+
 
   // Votes in final_mix: payload { gameId, alias, chosenPlaylistIndex } or chosenSongId
   socket.on('finalVote', ({ gameId, alias, chosen }) => {

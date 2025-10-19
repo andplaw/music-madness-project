@@ -74,33 +74,37 @@ export default function App() {
 
     // Main phase change handler
     socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists: newPlaylists, round: newRound, finalMix }) => {
+
+      console.group(`🎮 Phase Transition -> ${gamePhase}`);
+
       console.log('Game phase changed to:', gamePhase);
       setGamePhase(gamePhase);
 
-      
+      // Always sync playlists if provided
       if (Array.isArray(newPlaylists)) {
         setPlaylists(newPlaylists);
       }
 
+      // Update finalMix if present
       if (Array.isArray(finalMix)) {
+        console.log('Received final mix:', finalMix);
         setFinalMix(finalMix);
       }
 
+      // Update round number if sent
       if (typeof newRound === 'number') {
         setRound(newRound);
       }
 
+      // 🔄 Phase-specific view logic
       if (gamePhase === 'submission') {
         setView('submit');
+
       } else if (typeof gamePhase === 'string' && gamePhase.startsWith('elimination')) {
-        // assignedPlaylists is expected to be an object mapping alias -> playlistIndex
         console.log('Assigned playlists payload:', assignedPlaylists);
-        // Find current player's assignment robustly (case-insensitive fallback)
         if (assignedPlaylists) {
-          // Direct key match
           let assigned = assignedPlaylists[alias];
           if (assigned === undefined) {
-            // Try case-insensitive match
             const found = Object.entries(assignedPlaylists).find(([key]) => key.toLowerCase() === alias.toLowerCase());
             if (found) assigned = found[1];
           }
@@ -111,10 +115,25 @@ export default function App() {
             console.warn('No assignment found for alias:', alias);
           }
         }
+
       } else if (gamePhase === 'voting') {
         setView('voting');
+
+      } else if (gamePhase === 'final_mix') {
+        // 🆕 Handle the Final Mix phase explicitly
+        console.log('Transitioning to Final Mix phase');
+        setView('final_mix');
+        if (finalMix && finalMix.length > 0) {
+          setFinalMix(finalMix);
+        } else {
+          console.warn('Final mix phase entered but no songs found.');
+        }
+        setVoteSubmitted(false);
+        setSelectedVote(null);
       }
+      console.groupEnd();
     });
+
 
     // When playlists are updated (after eliminations), update frontend state
     socket.on('playlistsUpdated', updated => {
