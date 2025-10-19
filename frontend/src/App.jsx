@@ -318,11 +318,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* {song.eliminated && (
-                  <p className="text-sm text-red-600 ml-6">
-                    ❌ Eliminated in Round {song.eliminatedRound} by {song.eliminatedBy}: {song.comment}
-                  </p>
-                )} */}
               </li>
             ))}
           </ul>
@@ -333,20 +328,6 @@ export default function App() {
             onChange={(e) => setCommentary(e.target.value)}
             className="input w-full mt-2"
           />
-
-          <h3 className="mt-4 font-semibold">Elimination History</h3>
-          <EliminationHistoryViewer playlists={playlists} />
-
-          {/* {playlists.map((p, i) => (
-            <div key={i} className="text-sm bg-gray-100 p-2 rounded">
-              {(p.eliminationLog || []).map((log, i) => (
-                <div key={i} className="mb-2">
-                  <strong>Round {log.eliminatedRound}</strong>: "{log.song.title}" by {log.song.artist} — eliminated by {log.eliminatedBy}
-                  <div>Snark: "<em>{log.comment}</em>"</div>
-                </div>
-              ))}
-            </div>
-          ))} */}
 
           <button
             className="btn mt-2"
@@ -367,6 +348,10 @@ export default function App() {
           >
             Submit Elimination
           </button>
+
+          <h3 className="mt-4 font-semibold">Elimination History</h3>
+          <EliminationHistoryViewer playlists={playlists} />
+
         </div>
       )}
 
@@ -387,9 +372,13 @@ export default function App() {
             </div>
           ))}
           <button onClick={() => {
-            socket.emit('submitVote', { gameId, alias, songId: selectedVote });
+            if (selectedVote === null || selectedVote === undefined) return alert("Please select a song before voting!");
+            socket.emit('finalVote', { gameId, alias, chosenSongIndex: selectedVote });
             setVoteSubmitted(true);
-          }}>Submit Vote</button>
+          }}
+          >
+            Submit Vote
+          </button>
 
           <h3>Full Elimination History</h3>
           <EliminationHistoryViewer playlists={playlists} />

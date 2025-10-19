@@ -239,7 +239,7 @@ function advanceAfterRound(game, gameId) {
         return null;
       }).filter(Boolean);
     });
-    
+
     io.to(gameId).emit('gamePhaseChanged', {
       gamePhase: game.gamePhase,
       playlists: game.playlists,
@@ -522,7 +522,7 @@ io.on('connection', socket => {
   });
 
   // Votes in final_mix: payload { gameId, alias, chosenPlaylistIndex } or chosenSongId
-  socket.on('submitVote', ({ gameId, alias, chosen }) => {
+  socket.on('finalVote', ({ gameId, alias, chosen }) => {
     const game = games[gameId];
     if (!game || game.gamePhase !== 'final_mix') { socket.emit('error', { message: 'Not in final mix' }); return; }
 
