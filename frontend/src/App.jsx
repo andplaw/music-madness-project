@@ -374,17 +374,16 @@ export default function App() {
       {gamePhase === 'final_mix' && (
         <div>
           <h2>🎧 Final Mix — Vote for Your Favorite Song!</h2>
-          {finalMix.map((song, originAlias) => (
-            <div key={song.id}>
+          {finalMix.map((entry, i) => (
+            <div key={i}>
               <input
                 type="radio"
                 name="finalVote"
-                value={song.id}
-                onChange={() => setSelectedVote(song.id)}
+                value={i}
+                onChange={() => setSelectedVote(i)}
               />
-              {song.artist} - {song.title} ({song.link && <a href={song.link} target="_blank">link</a>})
-              <br/>
-              <small>Originally from {originAlias}’s playlist</small>
+              <p><strong> From {entry.originAlias}'s playlist</strong>: {entry.song.title} by {entry.song.artist}</p>
+              {entry.song.link && <a href={entry.song.link} target="_blank" rel="noopener noreferrer">Listen</a>}
             </div>
           ))}
           <button onClick={() => {

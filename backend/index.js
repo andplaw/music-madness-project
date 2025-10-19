@@ -204,16 +204,31 @@ function advanceAfterRound(game, gameId) {
   if (allPlaylistsHaveOneRemaining(game) || (game.currentRound && game.currentRound >= (game.maxRounds || computeMaxRounds(game)))) {
     // Build final mix: collect the single remaining song from each playlist
     const finalMix = game.playlists.map((pl, idx) => {
-      const remaining = pl.songs.find(s => !s.eliminated);
+      const remaining = pl.songs.find(s => !s.eliminated)
+                    || pl.songs[pl.songs.length-1];
+
+      // Defensive guards
+      const safeSong = remaining ? {
+        id: remaining.id || `song_${idx}`,
+        artist: remaining.artist || 'Unknown Artist',
+        title: remaining.title || 'Untitled Song',
+        link: remaining.link || '',
+        eliminated: remaining.eliminated || false,
+        eliminatedRound: remaining.eliminatedRound || null,
+        eliminatedBy: remaining.eliminatedBy || null,
+        comment: remaining.comment || ''
+      } : null;
+
       return {
         playlistIndex: idx,
-        originAlias: pl.alias,
-        song: remaining || null
+        originAlias: String(pl.alias),
+        song: safeSong || null
       };
-    }).filter(x => x.song !== null);
+    }).filter(entry => entry.song !== null);
 
     game.finalMix = finalMix;
     game.gamePhase = 'final_mix';
+
     game.playlists.forEach(pl => {
       if (!Array.isArray(pl.eliminationLog)) pl.eliminationLog = [];
       pl.eliminationLog = pl.eliminationLog.map(e => {
@@ -224,6 +239,7 @@ function advanceAfterRound(game, gameId) {
         return null;
       }).filter(Boolean);
     });
+    
     io.to(gameId).emit('gamePhaseChanged', {
       gamePhase: game.gamePhase,
       playlists: game.playlists,
