@@ -176,6 +176,7 @@ export default function App() {
       setGamePhase('final_results');
       setEliminationHistory(results.eliminationHistory || []);
       setWinningSong(results[0]?.song || null);
+      console.log('finalResults payload:', {results, tally});
     });
 
     socket.on('voteSubmitted', ({ alias: voterAlias }) => {

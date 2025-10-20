@@ -741,6 +741,8 @@ io.on('connection', socket => {
 
     // when all players voted -> tally
     const voteCount = Object.keys(game.votes).length;
+    console.log(`Vote from ${alias}: chosen=${chosen}. Total votes: ${voteCount}/${game.players.length}`);
+
     if (voteCount === game.players.length) {
       // tally: chosen may be {playlistIndex, songId} or just a song id; allow flexible shape
       const tally = {}; // key->count
@@ -748,23 +750,39 @@ io.on('connection', socket => {
         const key = (typeof v === 'object' && v.playlistIndex !== undefined) ? `pl-${v.playlistIndex}` : String(v);
         tally[key] = (tally[key] || 0) + 1;
       }
+      console.log('Tally:', tally);
 
       // find winner keys with max votes
       const maxVotes = Math.max(...Object.values(tally));
       const winners = Object.entries(tally).filter(([k, c]) => c === maxVotes).map(([k]) => k);
+      console.log('Winners:', winners);
 
       // Build a human-friendly result: map winners to song info
       const results = winners.map(w => {
         if (w.startsWith('pl-')) {
           const idx = parseInt(w.slice(3), 10);
           const fm = game.finalMix.find(f => f.playlistIndex === idx);
-          return { playlistIndex: idx, originAlias: fm?.originAlias, song: fm?.song, votes: tally[w] };
+          return { 
+            playlistIndex: idx, 
+            originAlias: fm?.originAlias, 
+            song: fm?.song, 
+            votes: tally[w] 
+          };
         } else {
           // if key is song id (fallback)
           const fm = game.finalMix.find(f => f.song && f.song.id === w);
-          return { playlistIndex: fm?.playlistIndex, originAlias: fm?.originAlias, song: fm?.song, votes: tally[w] };
+          return { 
+            playlistIndex: fm?.playlistIndex, 
+            originAlias: fm?.originAlias, 
+            song: fm?.song, 
+            votes: tally[w] 
+          };
         }
       });
+
+      console.log('Tally:', tally);
+      console.log('Results computed:', results);
+
 
       // finalize
       io.to(gameId).emit('finalResults', { results, tally });
