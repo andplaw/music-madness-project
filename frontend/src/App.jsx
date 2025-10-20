@@ -172,11 +172,18 @@ export default function App() {
       setGamePhase('final_mix');
     });
     
-    socket.on('voteResults', (results) => {
+    socket.on('finalResults', ({results, tally}) => {
       setGamePhase('final_results');
       setEliminationHistory(results.eliminationHistory || []);
-      setWinningSong(results.winningSong || null);
+      setWinningSong(results[0]?.song || null);
     });
+
+    socket.on('voteSubmitted', ({ alias: voterAlias }) => {
+      if (voterAlias === alias) {
+        setVoteSubmitted(true);
+      }
+    });
+
 
     // Clean up on unmount
     return () => {
@@ -189,6 +196,7 @@ export default function App() {
       socket.off('playlistSubmitted');
       socket.off('finalMixReady');
       socket.off('voteResults');
+      socket.off('voteSubmitted');
     };
   }, [alias]); // keep alias in deps so handlers see the latest alias
 
@@ -390,14 +398,20 @@ export default function App() {
               {entry.song.link && <a href={entry.song.link} target="_blank" rel="noopener noreferrer">Listen</a>}
             </div>
           ))}
-          <button onClick={() => {
-            if (selectedVote === null || selectedVote === undefined) return alert("Please select a song before voting!");
-            socket.emit('finalVote', { gameId, alias, chosenSongIndex: selectedVote });
-            setVoteSubmitted(true);
-          }}
-          >
-            Submit Vote
-          </button>
+          {voteSubmitted ? (
+            <p>✅ Your vote has been submitted! Waiting for others...</p>
+          ) : (
+            <button onClick={() => {
+              if (selectedVote === null || selectedVote === undefined) return alert("Please select a song before voting!");
+              socket.emit('finalVote', { gameId, alias, chosen: selectedVote });
+              setVoteSubmitted(true);
+            }}
+            >
+              Submit Vote
+            </button>
+          )
+          }
+          
 
           <h3>Full Elimination History</h3>
           <EliminationHistoryViewer playlists={playlists} />
