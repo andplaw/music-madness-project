@@ -193,6 +193,14 @@ function allPlaylistsHaveOneRemaining(game) {
 }
 
 function advanceAfterRound(game, gameId) {
+
+  console.log(`=== advanceAfterRound triggered for game ${gameId} ===`);
+  console.log(`Current round before advance: ${game.currentRound}`);
+  console.log(`Game phase before advance: ${game.gamePhase}`);
+  console.log(`Players in game: ${game.players.map(p => p.alias).join(', ')}`);
+  console.log(`Playlists count: ${game.playlists?.length || 0}`);
+
+
   if (!game) {
     console.error(`advanceAfterRound called with missing game ${gameId}`);
     return;
@@ -305,6 +313,11 @@ function advanceAfterRound(game, gameId) {
 
   // Recompute playlist assignments safely
   rotateAssignments(game);
+  if (!game.assignedPlaylists || Object.keys(game.assignedPlaylists).length !== game.players.length) {
+    console.error(`🚨 rotateAssignments failed or incomplete for game ${gameId}`);
+    console.error('assignedPlaylists:', game.assignedPlaylists);
+  }
+
   game.playlists.forEach(pl => {
     if (!Array.isArray(pl.eliminationLog)) pl.eliminationLog = [];
     pl.eliminationLog = pl.eliminationLog
@@ -334,6 +347,11 @@ function advanceAfterRound(game, gameId) {
     console.log(`➡️ Advanced ${gameId} to ${game.gamePhase}`);
     game._advancing = false;
   }, 300);
+
+  console.log(`=== advanceAfterRound END ===`);
+  console.log(`New game phase: ${game.gamePhase}`);
+  console.log(`New round: ${game.currentRound}`);
+
 }
 
 
@@ -596,7 +614,16 @@ socket.on('submitElimination', ({ gameId, alias, playlistIndex, eliminatedSongIn
         // Ensure game still exists and hasn't advanced already
         const stillSameGame = games[gameId] && games[gameId].currentRound === game.currentRound;
         if (stillSameGame) {
+
+          console.log('Emitting gamePhaseChanged with payload:', {
+            phase: game.gamePhase,
+            round: game.currentRound,
+            playlists: game.playlists?.length,
+            assignedPlaylists: Object.keys(game.assignedPlaylists || {}),
+            finalMix: game.finalMix?.length
+          });
           advanceAfterRound(game, gameId);
+          
         } else {
           console.warn(`Skipping advanceAfterRound for ${gameId} — game state already advanced.`);
         }
