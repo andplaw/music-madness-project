@@ -757,28 +757,21 @@ io.on('connection', socket => {
       const winners = Object.entries(tally).filter(([k, c]) => c === maxVotes).map(([k]) => k);
       console.log('Winners:', winners);
 
+      console.log('finalMix snapshot:', JSON.stringify(game.finalMix, null, 2));
+      console.log('Winner keys being looked up:', winners);
+
+
       // Build a human-friendly result: map winners to song info
       const results = winners.map(w => {
-        if (w.startsWith('pl-')) {
-          const idx = parseInt(w.slice(3), 10);
-          const fm = game.finalMix.find(f => f.playlistIndex === idx);
+          const fm = game.finalMix.find(f => f.playlistIndex === w);
           return { 
-            playlistIndex: idx, 
+            playlistIndex: w, 
             originAlias: fm?.originAlias, 
             song: fm?.song, 
             votes: tally[w] 
           };
-        } else {
-          // if key is song id (fallback)
-          const fm = game.finalMix.find(f => f.song && f.song.id === w);
-          return { 
-            playlistIndex: fm?.playlistIndex, 
-            originAlias: fm?.originAlias, 
-            song: fm?.song, 
-            votes: tally[w] 
-          };
-        }
-      });
+        } 
+      );
 
       console.log('Tally:', tally);
       console.log('Results computed:', results);
