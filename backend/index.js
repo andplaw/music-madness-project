@@ -132,6 +132,7 @@ function rotateAssignments(game, gameId) {
   const aliases = game.players.map(p => p.alias);
   const total = game.playlists.length;
 
+  // Initialize assignment history if needed
   if (!game.assignmentHistory) {
     game.assignmentHistory = {};
     for (const alias of aliases) {
@@ -139,29 +140,34 @@ function rotateAssignments(game, gameId) {
     }
   }
 
-  const unassigned = [...Array(total).keys()];
   const newAssignments = {};
-
+  const unassigned = [...Array(total).keys()];
   const shuffledAliases = [...aliases].sort(() => Math.random() - 0.5);
 
   for (const alias of shuffledAliases) {
     const history = game.assignmentHistory[alias] || [];
 
+    // 🧩 Step 1 — Filter candidates: not own playlist & not previously assigned
     let candidates = unassigned.filter(idx => {
       const pl = game.playlists[idx];
       return pl.alias !== alias && !history.includes(idx);
     });
 
+    // 🧩 Step 2 — If no completely new options left, allow repeats (still not own)
     if (candidates.length === 0) {
       candidates = unassigned.filter(idx => game.playlists[idx].alias !== alias);
     }
 
+    // 🧩 Step 3 — If still none left (should be extremely rare), assign any remaining
     if (candidates.length === 0) {
-      candidates = unassigned;
+      candidates = [...unassigned];
+      console.warn(`⚠️ No ideal playlist available for ${alias}; assigning fallback.`);
     }
 
+    // 🧩 Step 4 — Randomly pick one from candidates
     const chosen = candidates[Math.floor(Math.random() * candidates.length)];
 
+    // 🧩 Step 5 — Assign and update tracking
     newAssignments[alias] = chosen;
     const removeIndex = unassigned.indexOf(chosen);
     if (removeIndex !== -1) unassigned.splice(removeIndex, 1);
@@ -173,8 +179,9 @@ function rotateAssignments(game, gameId) {
   game.assignedPlaylists = newAssignments;
 
   io.to(gameId).emit('assignmentsUpdated', newAssignments);
-  console.log(`🔄 Rotated assignments (unique per round):`, newAssignments);
+  console.log(`🔄 Rotated assignments (no self-review, minimal repeats):`, newAssignments);
 }
+
 
 
 
