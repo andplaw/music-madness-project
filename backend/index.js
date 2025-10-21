@@ -747,7 +747,7 @@ io.on('connection', socket => {
       // tally: chosen may be {playlistIndex, songId} or just a song id; allow flexible shape
       const tally = {}; // key->count
       for (const v of Object.values(game.votes)) {
-        const key = (typeof v === 'object' && v.playlistIndex !== undefined) ? `${v.playlistIndex}` : v;
+        const key = (typeof v === 'object' && v.playlistIndex !== undefined) ? v.playlistIndex : v;
         tally[key] = (tally[key] || 0) + 1;
       }
       console.log('Tally:', tally);
