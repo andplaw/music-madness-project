@@ -770,9 +770,9 @@ io.on('connection', socket => {
 
       // Build a human-friendly result: map winners to song info
       const results = winners.map(w => {
-          const fm = game.finalMix.find(f => f.playlistIndex === w);
+          const fm = game.finalMix.find(f => f.playlistIndex === parseInt(w));
           return { 
-            playlistIndex: w, 
+            playlistIndex: parseInt(w), 
             originAlias: fm?.originAlias, 
             song: fm?.song, 
             votes: tally[w] 
