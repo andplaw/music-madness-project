@@ -102,6 +102,8 @@ export default function App() {
 
       } else if (typeof gamePhase === 'string' && gamePhase.startsWith('elimination')) {
         console.log('Assigned playlists payload:', assignedPlaylists);
+        setEliminationSubmitted(false); // ✅ reset before each round
+        
         if (assignedPlaylists) {
           let assigned = assignedPlaylists[alias];
           if (assigned === undefined) {
@@ -250,7 +252,6 @@ export default function App() {
 
     setEliminatedSongIndex(null);
     setCommentary('');
-    setEliminationSubmitted(true);
   };
 
   return (
@@ -353,7 +354,7 @@ export default function App() {
                     onChange={() => setEliminatedSongIndex(index)}
                   />
                   <span style={{ textDecoration: song.eliminated ? 'line-through' : 'none' }}>
-                    "{song.title}" by {song.artist} <a href={song.link} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Listen</a>
+                    "{song.title}" by {song.artist} - <a href={song.link} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Listen</a>
                   </span>
                 </label>
 
@@ -367,20 +368,20 @@ export default function App() {
             ))}
           </ul>
 
-          <textarea
+          {<textarea
             placeholder="Add your snarky commentary to accompany your elimination..."
             value={commentary}
             onChange={(e) => setCommentary(e.target.value)}
             className="input w-full mt-2"
-          />
+          />}
 
-          <button
+          {<button
             className="btn mt-2"
             disabled={eliminatedSongIndex === null || commentary.trim() === ''}
             onClick={handleSubmitElimination}
           >
             Submit Elimination
-          </button>
+          </button>}
 
           <h3 className="mt-4 font-semibold">Elimination History</h3>
           <EliminationHistoryViewer playlists={playlists} />
