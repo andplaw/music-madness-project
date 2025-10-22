@@ -46,6 +46,16 @@ export default function App() {
       socket.emit('rejoinGame', { gameId: storedGame, alias: storedAlias });
     }
 
+    // helper: find assignment for this alias (case-insensitive)
+  function findAssignedForAlias(assignedMap, aliasToFind) {
+    if (!assignedMap) return undefined;
+    // direct lookup
+    if (assignedMap[aliasToFind] !== undefined) return assignedMap[aliasToFind];
+    // case-insensitive
+    const found = Object.entries(assignedMap).find(([k]) => k.toLowerCase() === (aliasToFind || '').toLowerCase());
+    return found ? found[1] : undefined;
+  }
+
     socket.on('gameStateRestored', (gameData) => {
       setGamePhase(gameData.phase);
       setPlaylists(gameData.playlists);
@@ -73,55 +83,49 @@ export default function App() {
     });
 
     // Main phase change handler
-    socket.on('gamePhaseChanged', ({ gamePhase, assignedPlaylists, playlists: newPlaylists, round: newRound, finalMix }) => {
-
+    socket.on('gamePhaseChanged', payload => {
+      const { gamePhase: newPhase, assignedPlaylists, playlists: newPlaylists, round: newRound, finalMix } = payload || {};
       console.group(`🎮 Phase Transition -> ${gamePhase}`);
+      console.log('gamePhaseChanged payload:', payload);
 
-      console.log('Game phase changed to:', gamePhase);
-      setGamePhase(gamePhase);
+      // update canonical state
+      if (typeof newPhase === 'string') setGamePhase(newPhase);
+      if (Array.isArray(newPlaylists)) setPlaylists(newPlaylists);
+      if (Array.isArray(finalMix)) setFinalMix(finalMix);
+      if (typeof newRound === 'number') setRound(newRound);
 
-      // Always sync playlists if provided
-      if (Array.isArray(newPlaylists)) {
-        setPlaylists(newPlaylists);
+      // Reset local "submitted" flag when a new elimination round begins or when we enter final_mix
+      if (typeof newPhase === 'string' && (newPhase.startsWith('elimination') || newPhase === 'final_mix')) {
+        setEliminationSubmitted(false);
+        setPlaylistSubmitted(false); // defensive
+        setHasSubmittedElimination(false);
       }
 
-      // Update finalMix if present
-      if (Array.isArray(finalMix)) {
-        console.log('Received final mix:', finalMix);
-        setFinalMix(finalMix);
-      }
-
-      // Update round number if sent
-      if (typeof newRound === 'number') {
-        setRound(newRound);
-      }
-
-      // 🔄 Phase-specific view logic
-      if (gamePhase === 'submission') {
-        setView('submit');
-
-      } else if (typeof gamePhase === 'string' && gamePhase.startsWith('elimination')) {
-        console.log('Assigned playlists payload:', assignedPlaylists);
-        setEliminationSubmitted(false); // ✅ reset before each round
-        
-        if (assignedPlaylists) {
-          let assigned = assignedPlaylists[alias];
-          if (assigned === undefined) {
-            const found = Object.entries(assignedPlaylists).find(([key]) => key.toLowerCase() === alias.toLowerCase());
-            if (found) assigned = found[1];
-          }
-          if (assigned !== undefined) {
-            setAssignedPlaylistIndex(assigned);
+      // If server handed us assignedPlaylists (e.g., at round start), update our assignedPlaylistIndex
+      if (assignedPlaylists) {
+        const assignedForMe = findAssignedForAlias(assignedPlaylists, alias);
+        if (assignedForMe !== undefined) {
+          setAssignedPlaylistIndex(assignedForMe);
+          // Ensure we show the elimination view for a new round
+          if (typeof newPhase === 'string' && newPhase.startsWith('elimination')) {
             setView('eliminate');
-          } else {
-            console.warn('No assignment found for alias:', alias);
           }
+        } else {
+          // If no assignment for me (rare), clear assigned index
+          setAssignedPlaylistIndex(null);
         }
+      }
 
-      } else if (gamePhase === 'voting') {
+      // If we are entering submission phase, swap view
+      if (newPhase === 'submission') {
+        setView('submit');
+      }
+
+      if (newPhase === 'voting') {
         setView('voting');
+      }
 
-      } else if (gamePhase === 'final_mix') {
+      if (newPhase === 'final_mix') {
         // 🆕 Handle the Final Mix phase explicitly
         console.log('Transitioning to Final Mix phase');
         setView('final_mix');
@@ -133,28 +137,34 @@ export default function App() {
         setVoteSubmitted(false);
         setSelectedVote(null);
       }
+
       console.groupEnd();
     });
 
 
-    // When playlists are updated (after eliminations), update frontend state
+    // playlistsUpdated: keep playlists in sync (server emits after eliminations)
     socket.on('playlistsUpdated', updated => {
       console.log('playlistsUpdated received', updated);
-      if (Array.isArray(updated)) setPlaylists(updated);
+      if (Array.isArray(updated)) {
+        setPlaylists(updated);
+      }
+      // If server updated playlists AND we're waiting, the server might also have advanced - let phase change handle view.
+      // But defensively clear waiting if the assigned playlist for this player changed
+      // (we will also rely on gamePhaseChanged to set the view properly)
     });
 
 
-    // assignmentsUpdated is an alternate event; update assignment map if received
     socket.on('assignmentsUpdated', assigned => {
-      console.log('assignmentsUpdated received', assigned);
-      // If this contains the current player's assignment, update assignedPlaylistIndex
+      console.log('assignmentsUpdated:', assigned);
+      // update assignedPlaylists map locally
       if (assigned) {
-        let assignedForMe = assigned[alias];
-        if (assignedForMe === undefined) {
-          const found = Object.entries(assigned).find(([k]) => k.toLowerCase() === alias.toLowerCase());
-          if (found) assignedForMe = found[1];
+        const assignedForMe = findAssignedForAlias(assigned, alias);
+        if (assignedForMe !== undefined) {
+          setAssignedPlaylistIndex(assignedForMe);
+          // if we were waiting after submitting, clear and show eliminate UI
+          setEliminationSubmitted(false);
+          setView('eliminate');
         }
-        if (assignedForMe !== undefined) setAssignedPlaylistIndex(assignedForMe);
       }
     });
 
@@ -242,17 +252,21 @@ export default function App() {
   };
 
   const handleSubmitElimination = () => {
+    // send elimination to server
     socket.emit('submitElimination', {
-                gameId,
-                alias,
-                playlistIndex: assignedPlaylistIndex,
-                eliminatedSongIndex,
-                comment: commentary,
-              });
+      gameId,
+      alias,
+      playlistIndex: assignedPlaylistIndex,
+      eliminatedSongIndex,
+      comment: commentary,
+    });
 
+    // Clear selection inputs but keep a "waiting" flag so the player sees a confirmation
     setEliminatedSongIndex(null);
     setCommentary('');
+    setEliminationSubmitted(true);
   };
+
 
   return (
     <div className="p-4 max-w-xl mx-auto space-y-4">
