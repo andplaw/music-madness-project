@@ -218,6 +218,7 @@ export default function App() {
       socket.off('playlistSubmitted');
       socket.off('finalMixReady');
       socket.off('voteResults');
+      socket.off('finalResults');
       socket.off('voteSubmitted');
     };
   }, [alias]); // keep alias in deps so handlers see the latest alias
