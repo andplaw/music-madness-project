@@ -31,7 +31,7 @@ export default function App() {
   const [round, setRound] = useState(1);
   const [assignedPlaylist, setAssignedPlaylist] = useState(null); // For rejoin + backend sync
   const [eliminationHistory, setEliminationHistory] = useState([]); // Shared elimination log
-  const [hasSubmittedElimination, setHasSubmittedElimination] = useState(false); // For waiting state
+  const [eliminationSubmitted, setEliminationSubmitted] = useState(false); // For waiting state
   const [finalMix, setFinalMix] = useState([]); // Songs in final mix
   const [selectedVote, setSelectedVote] = useState(null); // Chosen song in final mix
   const [voteSubmitted, setVoteSubmitted] = useState(false); // Whether final vote is done
@@ -167,6 +167,13 @@ export default function App() {
       }
     });
 
+    socket.on('eliminationSubmitted', ({ alias: eliminatorAlias }) => {
+      if (eliminatorAlias === alias) {
+        setGamePhase('waiting');
+        setEliminationSubmitted(true);
+      }
+    });
+
     socket.on('finalMixReady', (mix) => {
       setFinalMix(mix);
       setGamePhase('final_mix');
@@ -232,9 +239,19 @@ export default function App() {
     setPlaylistSubmitted(true);
   };
 
-  const submitElimination = (songId, comment) => {
-    socket.emit('submitElimination', { gameId, alias, songId, comment });
-    setHasSubmittedElimination(true);
+  const handleSubmitElimination = (songId, comment) => {
+    socket.emit('submitElimination', {
+                gameId,
+                alias,
+                playlistIndex: assignedPlaylistIndex,
+                eliminatedSongIndex,
+                comment: commentary,
+              });
+
+    setEliminatedSongIndex(null);
+    setCommentary('');
+    setView('waiting');
+    setEliminationSubmitted(true);
   };
 
   return (
@@ -318,7 +335,8 @@ export default function App() {
         <p className="text-green-700">🎶 Playlist submitted! Waiting for others...</p>
       ))}
 
-      {view === 'eliminate' && assignedPlaylistIndex !== null && playlists[assignedPlaylistIndex] && (
+      {view === 'eliminate' && assignedPlaylistIndex !== null && playlists[assignedPlaylistIndex] && 
+      (!eliminationSubmitted ? (
         <div>
           <h2 className="font-semibold">Round {round}: Eliminate a Song</h2>
 
@@ -336,15 +354,15 @@ export default function App() {
                     onChange={() => setEliminatedSongIndex(index)}
                   />
                   <span style={{ textDecoration: song.eliminated ? 'line-through' : 'none' }}>
-                    "{song.title}" by {song.artist}
+                    "{song.title}" by {song.artist} <a href={song.link} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Listen</a>
                   </span>
                 </label>
 
-                {song.link && (
+                {/* {song.link && (
                   <div className="ml-6">
-                    <a href={song.link} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Listen</a>
+                    
                   </div>
-                )}
+                )} */}
 
               </li>
             ))}
@@ -361,17 +379,18 @@ export default function App() {
             className="btn mt-2"
             disabled={eliminatedSongIndex === null || commentary.trim() === ''}
             onClick={() => {
-              socket.emit('submitElimination', {
-                gameId,
-                alias,
-                playlistIndex: assignedPlaylistIndex,
-                eliminatedSongIndex,
-                comment: commentary,
-              });
+              // socket.emit('submitElimination', {
+              //   gameId,
+              //   alias,
+              //   playlistIndex: assignedPlaylistIndex,
+              //   eliminatedSongIndex,
+              //   comment: commentary,
+              // });
 
-              setEliminatedSongIndex(null);
-              setCommentary('');
-              setView('waiting');
+              // setEliminatedSongIndex(null);
+              // setCommentary('');
+              // setView('waiting');
+              handleSubmitElimination
             }}
           >
             Submit Elimination
@@ -381,10 +400,18 @@ export default function App() {
           <EliminationHistoryViewer playlists={playlists} />
 
         </div>
+      ) : (
+        <div>
+          <p className="text-green-700">🎶 Elimination submitted! Waiting for others...</p>
+          <h3 className="mt-4 font-semibold">Elimination History</h3>
+          <EliminationHistoryViewer playlists={playlists} />
+        </div>
+      )
       )}
 
 
       {gamePhase === 'final_mix' && (
+        !voteSubmitted ? (
         <div>
           <h2>🎧 Final Mix — Vote for Your Favorite Song!</h2>
           {finalMix.map((entry, i) => (
@@ -410,13 +437,17 @@ export default function App() {
             >
               Submit Vote
             </button>
-          )
-          }
-          
-
+          )}
           <h3>Full Elimination History</h3>
           <EliminationHistoryViewer playlists={playlists} />
         </div>
+        ) : (
+          <div>
+            <p>✅ Your vote has been submitted! Waiting for others...</p>
+            <h3>Full Elimination History</h3>
+            <EliminationHistoryViewer playlists={playlists} />
+          </div>
+        )
       )}
 
       {gamePhase === 'final_results' && (
