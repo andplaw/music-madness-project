@@ -49,11 +49,13 @@ export default function EliminationHistoryViewer({ playlists, finalResults = [] 
     : [];
 
   // Track which songs won final vote (if finalResults provided)
-  const winningSongTitles = new Set(
-    finalResults
-      .map(r => r.song?.title?.toLowerCase())
-      .filter(Boolean)
-  );
+  if (!(finalResults === null)) {
+    const winningSongTitles = new Set(
+      finalResults
+        ?.map(r => r.song?.title?.toLowerCase())
+        .filter(Boolean)
+    );
+  }
 
   return (
     <div className="elimination-history-container" style={{ marginTop: "1rem" }}>
