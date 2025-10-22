@@ -98,7 +98,6 @@ export default function App() {
       if (typeof newPhase === 'string' && (newPhase.startsWith('elimination') || newPhase === 'final_mix')) {
         setEliminationSubmitted(false);
         setPlaylistSubmitted(false); // defensive
-        setHasSubmittedElimination(false);
       }
 
       // If server handed us assignedPlaylists (e.g., at round start), update our assignedPlaylistIndex
