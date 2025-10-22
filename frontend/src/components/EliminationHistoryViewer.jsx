@@ -48,15 +48,6 @@ export default function EliminationHistoryViewer({ playlists, finalResults = [] 
     ? selectedPlaylist.songs
     : [];
 
-  // Track which songs won final vote (if finalResults provided)
-  if (!(finalResults === null)) {
-    const winningSongTitles = new Set(
-      finalResults
-        ?.map(r => r.song?.title?.toLowerCase())
-        .filter(Boolean)
-    );
-  }
-
   return (
     <div className="elimination-history-container" style={{ marginTop: "1rem" }}>
       <h3>🎧 Elimination History</h3>
@@ -117,8 +108,7 @@ export default function EliminationHistoryViewer({ playlists, finalResults = [] 
               eliminationLabel = `Eliminated by ${elimInfo.eliminatedBy ?? "Unknown"} (Round ${elimInfo.eliminatedRound ?? "?"})`;
               comment = elimInfo.comment ?? "";
             } else if (
-              finalResults.length > 0 &&
-              !winningSongTitles.has(title.toLowerCase())
+              finalResults.length > 0
             ) {
               eliminated = true;
               eliminationLabel = "Eliminated in Final Vote";
