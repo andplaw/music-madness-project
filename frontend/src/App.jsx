@@ -35,6 +35,7 @@ export default function App() {
   const [finalMix, setFinalMix] = useState([]); // Songs in final mix
   const [selectedVote, setSelectedVote] = useState(null); // Chosen song in final mix
   const [voteSubmitted, setVoteSubmitted] = useState(false); // Whether final vote is done
+  const [finalResults, setFinalResults] = useState(null);
   const [winningSong, setWinningSong] = useState(null); // Final results winner
 
   // Listen for backend events
@@ -190,12 +191,14 @@ export default function App() {
       setGamePhase('final_mix');
     });
     
-    socket.on('finalResults', ({results, tally}) => {
+    socket.on('finalResults', ({ results, tally }) => {
+      console.log('finalResults payload:', { results, tally });
       setGamePhase('final_results');
+      setFinalResults({ results, tally }); // ✅ store entire results object
       setEliminationHistory(results.eliminationHistory || []);
       setWinningSong(results[0]?.song || null);
-      console.log('finalResults payload:', {results, tally});
     });
+
 
     socket.on('voteSubmitted', ({ alias: voterAlias }) => {
       if (voterAlias === alias) {
