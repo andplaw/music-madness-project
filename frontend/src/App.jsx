@@ -377,20 +377,7 @@ export default function App() {
           <button
             className="btn mt-2"
             disabled={eliminatedSongIndex === null || commentary.trim() === ''}
-            onClick={() => {
-              // socket.emit('submitElimination', {
-              //   gameId,
-              //   alias,
-              //   playlistIndex: assignedPlaylistIndex,
-              //   eliminatedSongIndex,
-              //   comment: commentary,
-              // });
-
-              // setEliminatedSongIndex(null);
-              // setCommentary('');
-              // setView('waiting');
-              handleSubmitElimination
-            }}
+            onClick={handleSubmitElimination}
           >
             Submit Elimination
           </button>
