@@ -397,8 +397,7 @@ export default function App() {
           </button>}
 
           <h3 className="mt-4 font-semibold">Elimination History</h3>
-          <EliminationHistoryViewer playlists={playlists} finalResults={finalResults} />
-
+          <EliminationHistoryViewer playlists={playlists} finalResults={finalResults || { winners: [] }} />
 
 
         </div>
@@ -406,7 +405,7 @@ export default function App() {
         <div>
           <p className="text-green-700">🎶 Elimination submitted! Waiting for others...</p>
           <h3 className="mt-4 font-semibold">Elimination History</h3>
-          <EliminationHistoryViewer playlists={playlists} finalResults={finalResults} />
+          <EliminationHistoryViewer playlists={playlists} finalResults={finalResults || { winners: [] }} />
 
 
         </div>
@@ -443,16 +442,14 @@ export default function App() {
             </button>
           )}
           
-          <EliminationHistoryViewer playlists={playlists} finalResults={finalResults} />
-
+          <EliminationHistoryViewer playlists={playlists} finalResults={finalResults || { winners: [] }} />
 
         </div>
         ) : (
           <div>
             <p>✅ Your vote has been submitted! Waiting for others...</p>
             
-            <EliminationHistoryViewer playlists={playlists} finalResults={finalResults} />
-
+            <EliminationHistoryViewer playlists={playlists} finalResults={finalResults || { winners: [] }} />
 
           </div>
         )
@@ -464,8 +461,7 @@ export default function App() {
           <h3>{winningSong?.artist} - {winningSong?.title} {winningSong.link && <a href={winningSong.link} target="_blank" rel="noopener noreferrer">Listen</a>}</h3>
           <h4>🎉 Congratulations!</h4>
           <h3>Full Elimination History</h3>
-          <EliminationHistoryViewer playlists={playlists} finalResults={finalResults} />
-
+          <EliminationHistoryViewer playlists={playlists} finalResults={finalResults || { winners: [] }} />
 
         </div>
       )}
