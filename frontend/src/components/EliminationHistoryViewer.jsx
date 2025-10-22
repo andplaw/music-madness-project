@@ -108,10 +108,12 @@ export default function EliminationHistoryViewer({ playlists, finalResults = [] 
               eliminationLabel = `Eliminated by ${elimInfo.eliminatedBy ?? "Unknown"} (Round ${elimInfo.eliminatedRound ?? "?"})`;
               comment = elimInfo.comment ?? "";
             } else if (
-              finalResults.length > 0
+              !(finalResults === null)
             ) {
-              eliminated = true;
-              eliminationLabel = "Eliminated in Final Vote";
+              if (finalResults.length > 0) {
+                eliminated = true;
+                eliminationLabel = "Eliminated in Final Vote";
+              }
             }
 
             return (
