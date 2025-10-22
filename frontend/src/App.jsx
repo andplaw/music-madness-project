@@ -57,14 +57,6 @@ export default function App() {
     return found ? found[1] : undefined;
   }
 
-    socket.on('gameStateRestored', (gameData) => {
-      setGamePhase(gameData.phase);
-      setPlaylists(gameData.playlists);
-      setAssignedPlaylist(gameData.assignedPlaylist);
-      setEliminationHistory(gameData.eliminationHistory || []);
-    });
-
-
     // game created / joined
     socket.on('gameCreated', ({ gameId, players, gamePhase }) => {
       console.log('Game created:', gameId);
@@ -209,7 +201,6 @@ export default function App() {
 
     // Clean up on unmount
     return () => {
-      socket.off('gameStateRestored');
       socket.off('gameCreated');
       socket.off('playerJoined');
       socket.off('gamePhaseChanged');

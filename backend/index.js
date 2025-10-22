@@ -76,6 +76,19 @@ function assignPlaylistsToPlayers(game) {
     }
   }
 
+  // Initialize assignment history if needed
+  if (!game.assignmentSchedule) {
+    game.assignmentSchedule = {};
+    for (let i = 0; i < computeMaxRounds(game); i++) {
+      for (let j = 0; j < total; j++) {
+        if (!((i+j+1 % total) === j)) {
+          game.assignmentSchedule[i][j] = i+j+1 % total;
+        }
+      }
+    }
+  }
+  console.log(`playlist assignment schedule:`, game.assignmentSchedule);
+
   // Keep track of which playlists are already assigned this round
   const unassigned = [...Array(total).keys()];
   const assignedPlaylists = {};
@@ -137,6 +150,14 @@ function rotateAssignments(game, gameId) {
     game.assignmentHistory = {};
     for (const alias of aliases) {
       game.assignmentHistory[alias] = [];
+    }
+  }
+
+  // Initialize assignment history if needed
+  if (!game.assignmentSchedule) {
+    game.assignmentSchedule = {};
+    for (let i = 0; i<<total; i++) {
+      game.assignmentSchedule[i] = [];
     }
   }
 
@@ -394,6 +415,7 @@ io.on('connection', socket => {
       gamePhase: 'lobby',
       assignedPlaylists: {},
       assignmentHistory: {},
+      assignmentSchedule: {},
       currentRound: 0,
       maxRounds: 0,
       finalMix: null,
