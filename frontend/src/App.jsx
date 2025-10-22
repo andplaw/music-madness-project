@@ -397,14 +397,26 @@ export default function App() {
           </button>}
 
           <h3 className="mt-4 font-semibold">Elimination History</h3>
-          <EliminationHistoryViewer playlists={playlists} />
+          <EliminationHistoryViewer
+            playlists={playlists}
+            eliminationHistory={eliminationHistory}
+            gamePhase={gamePhase}
+            winningSong={winningSong}
+          />
+
 
         </div>
       ) : (
         <div>
           <p className="text-green-700">🎶 Elimination submitted! Waiting for others...</p>
           <h3 className="mt-4 font-semibold">Elimination History</h3>
-          <EliminationHistoryViewer playlists={playlists} />
+          <EliminationHistoryViewer
+            playlists={playlists}
+            eliminationHistory={eliminationHistory}
+            gamePhase={gamePhase}
+            winningSong={winningSong}
+          />
+
         </div>
       )
       )}
@@ -438,14 +450,26 @@ export default function App() {
               Submit Vote
             </button>
           )}
-          <h3>Full Elimination History</h3>
-          <EliminationHistoryViewer playlists={playlists} />
+          
+          <EliminationHistoryViewer
+            playlists={playlists}
+            eliminationHistory={eliminationHistory}
+            gamePhase={gamePhase}
+            winningSong={winningSong}
+          />
+
         </div>
         ) : (
           <div>
             <p>✅ Your vote has been submitted! Waiting for others...</p>
-            <h3>Full Elimination History</h3>
-            <EliminationHistoryViewer playlists={playlists} />
+            
+            <EliminationHistoryViewer
+              playlists={playlists}
+              eliminationHistory={eliminationHistory}
+              gamePhase={gamePhase}
+              winningSong={winningSong}
+            />
+
           </div>
         )
       )}
@@ -453,10 +477,16 @@ export default function App() {
       {gamePhase === 'final_results' && (
         <div className="text-center">
           <h2>🏆 The Winner Is...</h2>
-          <h3>{winningSong?.artist} - {winningSong?.title}</h3>
+          <h3>{winningSong?.artist} - {winningSong?.title} {winningSong.link && <a href={winningSong.link} target="_blank" rel="noopener noreferrer">Listen</a>}</h3>
           <h4>🎉 Congratulations!</h4>
           <h3>Full Elimination History</h3>
-          <EliminationHistoryViewer playlists={playlists} />
+          <EliminationHistoryViewer
+            playlists={playlists}
+            eliminationHistory={eliminationHistory}
+            gamePhase={gamePhase}
+            winningSong={winningSong}
+          />
+
         </div>
       )}
 
