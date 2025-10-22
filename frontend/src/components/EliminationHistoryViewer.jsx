@@ -1,59 +1,61 @@
-// EliminationHistoryViewer.jsx
-import React from 'react';
+import React, { useEffect, useState } from "react";
+import { socket } from "../socket";
 
-export default function EliminationHistoryViewer({ playlists, eliminationHistory = [], gamePhase, winningSong }) {
-  if (!playlists || playlists.length === 0) {
-    return <p>No playlists available.</p>;
-  }
+const EliminationHistoryViewer = ({ gameCode }) => {
+  const [eliminationHistory, setEliminationHistory] = useState([]);
+  const [playlists, setPlaylists] = useState([]);
 
-  // Build a quick lookup: { [playlistAlias]: { [songId or index]: { round, comment } } }
-  const eliminationMap = {};
-  eliminationHistory.forEach((entry) => {
-    const { round, eliminatedSongIndex, playlistIndex, comment } = entry;
-    const pl = playlists[playlistIndex];
-    if (!pl) return;
-    const alias = pl.alias;
-    if (!eliminationMap[alias]) eliminationMap[alias] = {};
-    eliminationMap[alias][eliminatedSongIndex] = { round, comment };
-  });
+  useEffect(() => {
+    socket.emit("requestEliminationHistory", { gameCode });
 
-  // Identify winner ID if present
-  const winnerId = winningSong?.id || winningSong?.song?.id;
+    socket.on("eliminationHistory", ({ history, playlists }) => {
+      setEliminationHistory(history);
+      setPlaylists(playlists);
+    });
+
+    socket.on("updateEliminationHistory", (updatedHistory) => {
+      setEliminationHistory([...updatedHistory]); // triggers re-render
+    });
+
+    socket.on("updatePlaylists", (updatedPlaylists) => {
+      setPlaylists([...updatedPlaylists]);
+    });
+
+    return () => {
+      socket.off("eliminationHistory");
+      socket.off("updateEliminationHistory");
+      socket.off("updatePlaylists");
+    };
+  }, [gameCode]);
 
   return (
-    <div className="elimination-history">
-      <h3>Elimination History</h3>
-      {playlists.map((pl, pIndex) => (
-        <div key={pIndex} className="playlist-history">
-          <h4>Playlist by {pl.alias}</h4>
+    <div>
+      <h2>Elimination History</h2>
+      {playlists.map((playlist, pIdx) => (
+        <div key={pIdx} style={{ marginBottom: "1rem" }}>
+          <h3>{playlist.alias}</h3>
           <ul>
-            {pl.songs.map((song, sIndex) => {
-              const elimInfo = eliminationMap[pl.alias]?.[sIndex];
-              const isEliminated = !!elimInfo;
-              const isWinner =
-                gamePhase === 'final_results' &&
-                (song.id === winnerId ||
-                 song.title === winningSong?.song?.title);
-
-              let statusLabel = 'Active';
-              let statusDetail = '';
-
-              if (isWinner) {
-                statusLabel = '🏆 Winner!';
-              } else if (isEliminated) {
-                statusLabel = `❌ Eliminated (Round ${elimInfo.round})`;
-                statusDetail = elimInfo.comment ? ` — “${elimInfo.comment}”` : '';
-              } else if (gamePhase === 'final_results' && !isWinner) {
-                statusLabel = '🗳️ Eliminated in Final Vote';
-              }
+            {playlist.songs.map((song, sIdx) => {
+              const elimination = eliminationHistory.find(
+                (entry) =>
+                  entry.song === song &&
+                  entry.playlistAlias === playlist.alias
+              );
 
               return (
-                <li key={sIndex} style={{ marginBottom: '0.3em' }}>
-                  <strong>{song.title}</strong> by {song.artist} {song.link && <a href={song.link} target="_blank" rel="noopener noreferrer">Listen</a>}
-                  <div style={{ marginLeft: '1em', fontSize: '0.9em' }}>
-                    {statusLabel}
-                    {statusDetail && <span>{statusDetail}</span>}
-                  </div>
+                <li key={sIdx}>
+                  {song}
+                  {elimination ? (
+                    <>
+                      {" "}
+                      — Eliminated in Round {elimination.round}
+                      {elimination.commentary && (
+                        <> ({elimination.commentary})</>
+                      )}
+                    </>
+                  ) : (
+                    <> — Still in play</>
+                  )}
                 </li>
               );
             })}
@@ -62,4 +64,6 @@ export default function EliminationHistoryViewer({ playlists, eliminationHistory
       ))}
     </div>
   );
-}
+};
+
+export default EliminationHistoryViewer;

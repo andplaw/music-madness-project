@@ -212,6 +212,7 @@ function advanceAfterRound(game, gameId) {
   game.players.forEach(p => (p.hasSubmittedElimination = false));
 
 
+
   if (!game) {
     console.error(`advanceAfterRound called with missing game ${gameId}`);
     return;
@@ -346,6 +347,8 @@ function advanceAfterRound(game, gameId) {
       })
       .filter(Boolean);
   });
+
+  io.to(gameCode).emit("updateEliminationHistory", game.eliminationHistory);
 
   // Slight buffer to prevent phase-race conditions
   setTimeout(() => {
@@ -730,6 +733,15 @@ io.on('connection', socket => {
     }
   });
 
+  socket.on("requestEliminationHistory", ({ gameCode }) => {
+    const game = games[gameCode];
+    if (!game) return;
+
+    socket.emit("eliminationHistory", {
+      history: game.eliminationHistory,
+      playlists: game.playlists,
+    });
+  });
 
 
   // Votes in final_mix: payload { gameId, alias, chosenPlaylistIndex } or chosenSongId
