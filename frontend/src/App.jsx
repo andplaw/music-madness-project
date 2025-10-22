@@ -239,7 +239,7 @@ export default function App() {
     setPlaylistSubmitted(true);
   };
 
-  const handleSubmitElimination = (songId, comment) => {
+  const handleSubmitElimination = () => {
     socket.emit('submitElimination', {
                 gameId,
                 alias,
@@ -250,7 +250,6 @@ export default function App() {
 
     setEliminatedSongIndex(null);
     setCommentary('');
-    setView('waiting');
     setEliminationSubmitted(true);
   };
 
