@@ -69,68 +69,30 @@ function assignPlaylistsToPlayers(game) {
   const aliases = game.players.map(p => p.alias);
   const total = game.playlists.length;
 
-  if (!game.assignmentHistory) {
-    game.assignmentHistory = {};
-    for (const alias of aliases) {
-      game.assignmentHistory[alias] = [];
-    }
-  }
-
-  // Initialize assignment history if needed
+  // Initialize assignment schedule if needed
   if (!game.assignmentSchedule) {
-    game.assignmentSchedule = {};
+    game.assignmentSchedule = [];
     for (let i = 0; i < computeMaxRounds(game); i++) {
+      game.assignmentSchedule[i] = [];
       for (let j = 0; j < total; j++) {
-        if (!((i+j+1 % total) === j)) {
-          game.assignmentSchedule[i][j] = i+j+1 % total;
-        }
+        game.assignmentSchedule[i][j] = ((i+j+1)%total + Math.floor(i/(total-1)))%total;
       }
     }
+    console.log(`playlist assignment schedule:`, game.assignmentSchedule);
   }
-  console.log(`playlist assignment schedule:`, game.assignmentSchedule);
 
-  // Keep track of which playlists are already assigned this round
-  const unassigned = [...Array(total).keys()];
   const assignedPlaylists = {};
 
-  // Shuffle aliases to randomize who picks first
-  const shuffledAliases = [...aliases].sort(() => Math.random() - 0.5);
+  let aliasIdx = 1;
+  for (const alias of aliases) {
 
-  for (const alias of shuffledAliases) {
-    const history = game.assignmentHistory[alias] || [];
+    assignedPlaylists[alias] = game.assignmentSchedule[game.currentRound][aliasIdx];
 
-    // Filter available playlists: not own, not yet assigned, not in history (if possible)
-    let candidates = unassigned.filter(idx => {
-      const pl = game.playlists[idx];
-      return pl.alias !== alias && !history.includes(idx);
-    });
-
-    // If all have been seen before, allow reassigning previously reviewed ones
-    if (candidates.length === 0) {
-      candidates = unassigned.filter(idx => game.playlists[idx].alias !== alias);
-    }
-
-    if (candidates.length === 0) {
-      console.warn(`⚠️ No valid playlist for ${alias}. Assigning randomly (fallback).`);
-      candidates = unassigned;
-    }
-
-    // Pick one randomly from the remaining candidates
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-
-    assignedPlaylists[alias] = chosen;
-
-    // Remove that playlist from pool so no one else gets it this round
-    const removeIndex = unassigned.indexOf(chosen);
-    if (removeIndex !== -1) unassigned.splice(removeIndex, 1);
-
-    // Update history
-    if (!game.assignmentHistory[alias]) game.assignmentHistory[alias] = [];
-    game.assignmentHistory[alias].push(chosen);
+    aliasIdx ++
   }
 
   game.assignedPlaylists = assignedPlaylists;
-  console.log(`🎯 Assigned playlists (unique per round):`, assignedPlaylists);
+  console.log(`🎯 Assigned playlists for Round: ${game.currentRound}:`, assignedPlaylists);
 
   return assignedPlaylists;
 }
@@ -145,62 +107,32 @@ function rotateAssignments(game, gameId) {
   const aliases = game.players.map(p => p.alias);
   const total = game.playlists.length;
 
-  // Initialize assignment history if needed
-  if (!game.assignmentHistory) {
-    game.assignmentHistory = {};
-    for (const alias of aliases) {
-      game.assignmentHistory[alias] = [];
-    }
-  }
-
-  // Initialize assignment history if needed
+  // Initialize assignment schedule if needed
   if (!game.assignmentSchedule) {
-    game.assignmentSchedule = {};
-    for (let i = 0; i<<total; i++) {
+    game.assignmentSchedule = [];
+    for (let i = 0; i < computeMaxRounds(game); i++) {
       game.assignmentSchedule[i] = [];
+      for (let j = 0; j < total; j++) {
+        game.assignmentSchedule[i][j] = ((i+j+1)%total + Math.floor(i/(total-1)))%total;
+      }
     }
+    console.log(`playlist assignment schedule:`, game.assignmentSchedule);
   }
-
+  
   const newAssignments = {};
-  const unassigned = [...Array(total).keys()];
-  const shuffledAliases = [...aliases].sort(() => Math.random() - 0.5);
 
-  for (const alias of shuffledAliases) {
-    const history = game.assignmentHistory[alias] || [];
+  let aliasIdx = 1;
+  for (const alias of aliases) {
 
-    // 🧩 Step 1 — Filter candidates: not own playlist & not previously assigned
-    let candidates = unassigned.filter(idx => {
-      const pl = game.playlists[idx];
-      return pl.alias !== alias && !history.includes(idx);
-    });
+    newAssignments[alias] = game.assignmentSchedule[game.currentRound][aliasIdx];
 
-    // 🧩 Step 2 — If no completely new options left, allow repeats (still not own)
-    if (candidates.length === 0) {
-      candidates = unassigned.filter(idx => game.playlists[idx].alias !== alias);
-    }
-
-    // 🧩 Step 3 — If still none left (should be extremely rare), assign any remaining
-    if (candidates.length === 0) {
-      candidates = [...unassigned];
-      console.warn(`⚠️ No ideal playlist available for ${alias}; assigning fallback.`);
-    }
-
-    // 🧩 Step 4 — Randomly pick one from candidates
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-
-    // 🧩 Step 5 — Assign and update tracking
-    newAssignments[alias] = chosen;
-    const removeIndex = unassigned.indexOf(chosen);
-    if (removeIndex !== -1) unassigned.splice(removeIndex, 1);
-
-    if (!game.assignmentHistory[alias]) game.assignmentHistory[alias] = [];
-    game.assignmentHistory[alias].push(chosen);
+    aliasIdx ++
   }
 
   game.assignedPlaylists = newAssignments;
 
   io.to(gameId).emit('assignmentsUpdated', newAssignments);
-  console.log(`🔄 Rotated assignments (no self-review, minimal repeats):`, newAssignments);
+  console.log(`🎯 Assigned playlists for Round: ${game.currentRound}:`, newAssignments);
 }
 
 
@@ -414,7 +346,6 @@ io.on('connection', socket => {
       password: password || '',
       gamePhase: 'lobby',
       assignedPlaylists: {},
-      assignmentHistory: {},
       assignmentSchedule: {},
       currentRound: 0,
       maxRounds: 0,
