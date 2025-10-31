@@ -477,18 +477,6 @@ io.on('connection', socket => {
 
     player.playlist = normalizedSongs;
 
-    // //Build a conversion from alias to a consistent aliasIndex
-    // const aliases = game.players.map(p => p.alias)
-    // let aliasIdx = 0;
-    // const aliasMap = {};
-    // for (const alias of aliases) {
-    //   aliasMap[alias] = aliasIdx;
-    //   aliasIdx++;
-    // }
-
-    // //Map incoming playlist to consistent aliasIndex
-    // game.playlists[aliasMap[alias]] = { alias, songs: normalizedSongs, eliminationLog: [] }; // store playlist with alias
-
     game.playlists.push({ alias, songs: normalizedSongs, eliminationLog: [] });
 
     io.to(gameId).emit('playlistSubmitted', { alias });
@@ -499,11 +487,17 @@ io.on('connection', socket => {
     // If everyone submitted -> build assignments and start elimination_round_1
     if (game.playlists.length === game.players.length) {
       // 🔧 Build stable alias→playlistIndex map
+      const aliases = game.players.map(p => p.alias);
+
       game.aliasToPlaylistIndex = {};
-      for (let i = 0; i < game.playlists.length; i++) {
-        const alias = game.playlists[i].alias;
-        game.aliasToPlaylistIndex[alias] = i;
+      let aliasIdx = 0;
+      for (const alias of aliases) {
+        game.aliasToPlaylistIndex[alias] = aliasIdx;
+        aliasIdx++;
       }
+      game.playlists.sort((a,b) => game.aliasToPlaylistIndex[a.alias] - game.aliasToPlaylistIndex[b.alias]);
+
+
       game.assignedPlaylists = assignPlaylistsToPlayers(game);
       game.currentRound = 1;
       game.maxRounds = computeMaxRounds(game);
