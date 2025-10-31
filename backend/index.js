@@ -69,6 +69,7 @@ function assignPlaylistsToPlayers(game) {
   const aliases = game.players.map(p => p.alias);
   const total = game.playlists.length;
 
+  console.log(`playlist assignment schedule empty:`, game.assignmentSchedule)
   // Initialize assignment schedule if needed
   if (!game.assignmentSchedule) {
     game.assignmentSchedule = [];
@@ -134,9 +135,6 @@ function rotateAssignments(game, gameId) {
   io.to(gameId).emit('assignmentsUpdated', newAssignments);
   console.log(`🎯 Assigned playlists for Round: ${game.currentRound}:`, newAssignments);
 }
-
-
-
 
 /* -----------------------
    Core game lifecycle helpers
