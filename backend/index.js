@@ -60,6 +60,10 @@ function getOrUpdatePlayer(game, socket, alias, createIfMissing = false) {
   return null;
 }
 
+function isEmpty(value) {
+  return value === null || value === undefined || value.length === 0;
+}
+
 /**
  * Assign playlists to players (ensures nobody receives their own playlist).
  * Attempts to avoid repeating prior assignments (assignmentHistory) when possible.
@@ -69,9 +73,8 @@ function assignPlaylistsToPlayers(game) {
   const aliases = game.players.map(p => p.alias);
   const total = game.playlists.length;
 
-  console.log(`playlist assignment schedule empty:`, game.assignmentSchedule)
   // Initialize assignment schedule if needed
-  if (!game.assignmentSchedule) {
+  if (isEmpty(game.assignmentSchedule)) {
     game.assignmentSchedule = [];
     for (let i = 0; i < computeMaxRounds(game); i++) {
       game.assignmentSchedule[i] = [];
@@ -109,7 +112,8 @@ function rotateAssignments(game, gameId) {
   const total = game.playlists.length;
 
   // Initialize assignment schedule if needed
-  if (!game.assignmentSchedule) {
+  if (isEmpty(game.assignmentSchedule)) {
+    console.log(`For some reason the assignment schedule is empty during rotateAssignments.`);
     game.assignmentSchedule = [];
     for (let i = 0; i < computeMaxRounds(game); i++) {
       game.assignmentSchedule[i] = [];
@@ -344,7 +348,7 @@ io.on('connection', socket => {
       password: password || '',
       gamePhase: 'lobby',
       assignedPlaylists: {},
-      assignmentSchedule: {},
+      assignmentSchedule: [],
       currentRound: 0,
       maxRounds: 0,
       finalMix: null,
