@@ -80,6 +80,7 @@ function assignPlaylistsToPlayers(game) {
       game.assignmentSchedule[i] = [];
       for (let j = 0; j < total; j++) {
         game.assignmentSchedule[i][j] = ((i+j+1)%total + Math.floor(i/(total-1)))%total;
+        console.log(`Round ${i}, Player ${aliases[j]} -> Playlist ${game.assignmentSchedule[i][j]}`);
       }
     }
     console.log(`playlist assignment schedule:`, game.assignmentSchedule);
