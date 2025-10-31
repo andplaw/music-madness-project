@@ -91,11 +91,14 @@ function assignPlaylistsToPlayers(game) {
 
   let aliasIdx = 0;
   for (const alias of aliases) {
-
+    const playlistIndex = game.aliasToPlaylistIndex[alias];
+    if (playlistIndex === undefined) {
+      console.warn(`⚠️ No playlist index found for alias ${alias}`);
+    }
     assignedPlaylists[alias] = game.assignmentSchedule[game.currentRound][aliasIdx];
-
-    aliasIdx ++
+    aliasIdx++;
   }
+
 
   game.assignedPlaylists = assignedPlaylists;
   console.log(`🎯 Assigned playlists for Round: ${game.currentRound+1}:`, assignedPlaylists);
@@ -113,33 +116,22 @@ function rotateAssignments(game, gameId) {
   const aliases = game.players.map(p => p.alias);
   const total = game.playlists.length;
 
-  // Initialize assignment schedule if needed
   if (isEmpty(game.assignmentSchedule)) {
-    console.log(`For some reason the assignment schedule is empty during rotateAssignments.`);
-    game.assignmentSchedule = [];
-    for (let i = 0; i < computeMaxRounds(game); i++) {
-      game.assignmentSchedule[i] = [];
-      for (let j = 0; j < total; j++) {
-        game.assignmentSchedule[i][j] = ((i+j+1)%total + Math.floor(i/(total-1)))%total;
-      }
-    }
-    console.log(`playlist assignment schedule:`, game.assignmentSchedule);
+    console.warn(`Assignment schedule empty in rotateAssignments — rebuilding`);
+    assignPlaylistsToPlayers(game); // rebuild schedule
   }
-  
-  const newAssignments = {};
 
+  const newAssignments = {};
   let aliasIdx = 0;
   for (const alias of aliases) {
-
-    newAssignments[alias] = game.assignmentSchedule[game.currentRound][aliasIdx];
-
-    aliasIdx ++
+    const playlistIndex = game.assignmentSchedule[game.currentRound][aliasIdx];
+    newAssignments[alias] = playlistIndex;
+    aliasIdx++;
   }
 
   game.assignedPlaylists = newAssignments;
-
   io.to(gameId).emit('assignmentsUpdated', newAssignments);
-  console.log(`🎯 Assigned playlists for Round: ${game.currentRound+1}:`, newAssignments);
+  console.log(`🎯 Round ${game.currentRound + 1} assignments:`, newAssignments);
 }
 
 /* -----------------------
@@ -281,6 +273,13 @@ function advanceAfterRound(game, gameId) {
   game.gamePhase = `elimination_round_${game.currentRound}`;
 
   // Recompute playlist assignments safely
+  if (!game.aliasToPlaylistIndex) {
+    game.aliasToPlaylistIndex = {};
+    for (let i = 0; i < game.playlists.length; i++) {
+      game.aliasToPlaylistIndex[game.playlists[i].alias] = i;
+    }
+  } 
+
   rotateAssignments(game);
   if (!game.assignedPlaylists || Object.keys(game.assignedPlaylists).length !== game.players.length) {
     console.error(`🚨 rotateAssignments failed or incomplete for game ${gameId}`);
@@ -479,17 +478,19 @@ io.on('connection', socket => {
 
     player.playlist = normalizedSongs;
 
-    //Build a conversion from alias to a consistent aliasIndex
-    const aliases = game.players.map(p => p.alias)
-    let aliasIdx = 0;
-    const aliasMap = {};
-    for (const alias of aliases) {
-      aliasMap[alias] = aliasIdx;
-      aliasIdx++;
-    }
+    // //Build a conversion from alias to a consistent aliasIndex
+    // const aliases = game.players.map(p => p.alias)
+    // let aliasIdx = 0;
+    // const aliasMap = {};
+    // for (const alias of aliases) {
+    //   aliasMap[alias] = aliasIdx;
+    //   aliasIdx++;
+    // }
 
-    //Map incoming playlist to consistent aliasIndex
-    game.playlists[aliasMap[alias]] = { alias, songs: normalizedSongs, eliminationLog: [] }; // store playlist with alias
+    // //Map incoming playlist to consistent aliasIndex
+    // game.playlists[aliasMap[alias]] = { alias, songs: normalizedSongs, eliminationLog: [] }; // store playlist with alias
+
+    game.playlists.push({ alias, songs: normalizedSongs, eliminationLog: [] });
 
     io.to(gameId).emit('playlistSubmitted', { alias });
     io.to(gameId).emit('playlistsUpdated', game.playlists);
@@ -498,6 +499,12 @@ io.on('connection', socket => {
 
     // If everyone submitted -> build assignments and start elimination_round_1
     if (game.playlists.length === game.players.length) {
+      // 🔧 Build stable alias→playlistIndex map
+      game.aliasToPlaylistIndex = {};
+      for (let i = 0; i < game.playlists.length; i++) {
+        const alias = game.playlists[i].alias;
+        game.aliasToPlaylistIndex[alias] = i;
+      }
       game.assignedPlaylists = assignPlaylistsToPlayers(game);
       game.currentRound = 1;
       game.maxRounds = computeMaxRounds(game);
