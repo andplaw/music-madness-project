@@ -304,7 +304,7 @@ function advanceAfterRound(game, gameId) {
       .filter(Boolean);
   });
 
-  io.to(gameCode).emit("updateEliminationHistory", game.eliminationHistory);
+  // io.to(gameCode).emit("updateEliminationHistory", game.eliminationHistory);
 
   // Slight buffer to prevent phase-race conditions
   setTimeout(() => {
