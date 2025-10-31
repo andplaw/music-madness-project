@@ -479,7 +479,7 @@ io.on('connection', socket => {
 
     //Build a conversion from alias to a consistent aliasIndex
     const aliases = game.players.map(p => p.alias)
-    const aliasIdx = 0;
+    let aliasIdx = 0;
     const aliasMap = {};
     for (const alias of aliases) {
       aliasMap[alias] = aliasIdx;
