@@ -476,7 +476,18 @@ io.on('connection', socket => {
     });
 
     player.playlist = normalizedSongs;
-    game.playlists.push({ alias, songs: normalizedSongs, eliminationLog: [] });
+
+    //Build a conversion from alias to a consistent aliasIndex
+    const aliases = game.players.map(p => p.alias)
+    const aliasIdx = 0;
+    const aliasMap = {};
+    for (const alias of aliases) {
+      aliasMap[alias] = aliasIdx;
+      aliasIdx++;
+    }
+
+    //Map incoming playlist to consistent aliasIndex
+    game.playlists[aliasMap[alias]] = { alias, songs: normalizedSongs, eliminationLog: [] }; // store playlist with alias
 
     io.to(gameId).emit('playlistSubmitted', { alias });
     io.to(gameId).emit('playlistsUpdated', game.playlists);
