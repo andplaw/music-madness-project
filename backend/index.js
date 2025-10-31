@@ -87,7 +87,7 @@ function assignPlaylistsToPlayers(game) {
 
   const assignedPlaylists = {};
 
-  let aliasIdx = 1;
+  let aliasIdx = 0;
   for (const alias of aliases) {
 
     assignedPlaylists[alias] = game.assignmentSchedule[game.currentRound][aliasIdx];
@@ -96,7 +96,7 @@ function assignPlaylistsToPlayers(game) {
   }
 
   game.assignedPlaylists = assignedPlaylists;
-  console.log(`🎯 Assigned playlists for Round: ${game.currentRound}:`, assignedPlaylists);
+  console.log(`🎯 Assigned playlists for Round: ${game.currentRound+1}:`, assignedPlaylists);
 
   return assignedPlaylists;
 }
@@ -126,7 +126,7 @@ function rotateAssignments(game, gameId) {
   
   const newAssignments = {};
 
-  let aliasIdx = 1;
+  let aliasIdx = 0;
   for (const alias of aliases) {
 
     newAssignments[alias] = game.assignmentSchedule[game.currentRound][aliasIdx];
@@ -137,7 +137,7 @@ function rotateAssignments(game, gameId) {
   game.assignedPlaylists = newAssignments;
 
   io.to(gameId).emit('assignmentsUpdated', newAssignments);
-  console.log(`🎯 Assigned playlists for Round: ${game.currentRound}:`, newAssignments);
+  console.log(`🎯 Assigned playlists for Round: ${game.currentRound+1}:`, newAssignments);
 }
 
 /* -----------------------
