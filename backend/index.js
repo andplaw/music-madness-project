@@ -76,6 +76,7 @@ function assignPlaylistsToPlayers(game) {
   // Initialize assignment schedule if needed
   if (isEmpty(game.assignmentSchedule)) {
     game.assignmentSchedule = [];
+    console.log(`Building assignment schedule for ${computeMaxRounds(game)} rounds and ${total} players.`);
     for (let i = 0; i < computeMaxRounds(game); i++) {
       game.assignmentSchedule[i] = [];
       for (let j = 0; j < total; j++) {
